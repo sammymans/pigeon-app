@@ -40,6 +40,8 @@ New flights persist the additive optional `openAcknowledged` field so every newl
 
 ## Verification
 
+The commands and counts in this section record verification in the original full-source workspace. This clean projection's current commands and retained test scope are in the root README.
+
 `convex/starterPair.test.ts` adds 19 in-memory Convex tests covering identity requirements, private status, room isolation, concurrent membership, retries, exact invite expiry, handle validation/rollback, legacy compatibility, sealed-body projection denial, independent-client access, scheduled settlement, reconnect recovery, timed replies, Unicode limits, immutable payloads, and exact normal/demo durations. Exact route expectations include same-city 120s/30s, San Francisco–Los Angeles 33,548s/30s, San Francisco–New York 247,746s/69s, and New York–London 334,214s/90s (normal/demo).
 
 Passed locally:
