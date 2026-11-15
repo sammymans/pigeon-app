@@ -1,0 +1,20 @@
+{
+  "name": "pigeon-foundation",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p convex && npm --prefix starter run typecheck",
+    "check": "npm run test && npm run typecheck"
+  },
+  "dependencies": {
+    "convex": "^1.50.0"
+  },
+  "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
+    "@types/node": "^26.6.5",
+    "convex-test": "^0.0.71",
+    "typescript": "~6.0.3",
+    "vitest": "^5.1.0"
+  }
+}

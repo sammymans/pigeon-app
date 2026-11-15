@@ -1,0 +1,27 @@
+name: Foundation checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            starter/package-lock.json
+      - run: npm ci
+      - run: npm --prefix starter ci
+      - run: npm run check
+      - run: npx expo install --check
+        working-directory: starter

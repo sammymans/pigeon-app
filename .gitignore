@@ -1,0 +1,12 @@
+node_modules/
+.expo/
+.convex/
+dist/
+ios/
+android/
+*.log
+.env
+.env.*
+!.env.example
+.revyl/
+.DS_Store
