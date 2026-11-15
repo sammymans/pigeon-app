@@ -1,0 +1,6 @@
+.env
+.env.*
+.agents
+.claude
+.revyl
+convex/.local
