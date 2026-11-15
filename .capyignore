@@ -1,0 +1,5 @@
+.env
+.env.*
+.revyl
+.convex
+dist
