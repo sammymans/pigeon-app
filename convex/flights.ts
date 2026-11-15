@@ -40,7 +40,7 @@ export const detail = query({
     const viewer = id ? await optionalProfile(ctx) : null;
     if (flight.visibility === 'sealed' && viewer?._id !== flight.senderId && viewer?._id !== flight.recipientId) return { flight: null, serverTime: 0 };
     const summary = await summaryProjection(ctx, flight, viewer);
-    const canRead = summary.role === 'sender' || (summary.role === 'recipient' && flight.state === 'delivered') || (summary.role === 'catcher' && flight.state === 'intercepted');
+    const canRead = summary.role === 'sender' || (summary.role === 'recipient' && flight.state === 'delivered') || (summary.role === 'catcher' && flight.state === 'intercepted' && !flight.tripId);
     const message = canRead ? await ctx.db.query('messages').withIndex('by_flightId', (q) => q.eq('flightId', flight._id)).unique() : null;
     const connection = summary.role === 'catcher' && viewer ? await ctx.db.query('connections').withIndex('by_pairKey', (q) => q.eq('pairKey', pairKey(viewer._id, flight.senderId))).unique() : null;
     return {
@@ -80,7 +80,10 @@ export const reserve = mutation({
     const id = ctx.db.normalizeId('flights', args.flightId);
     let flight = id ? await ctx.db.get('flights', id) : null;
     const now = Date.now();
-    if (!flight || flight.visibility !== 'open' || flight.state !== 'in_flight' || flight.namespace !== profile.namespace || flight.senderId === profile._id || flight.recipientId === profile._id) throw new ConvexError('This pigeon cannot be caught.');
+    if (!flight || flight.visibility !== 'open' || flight.tripLeg === 'empty_return' || flight.state !== 'in_flight' || flight.namespace !== profile.namespace || flight.senderId === profile._id || flight.recipientId === profile._id) throw new ConvexError('This pigeon cannot be caught.');
+    if (flight.namespace.startsWith('demo:room-')) throw new ConvexError('Use the slingshot encounter for this pigeon.');
+    if (flight.activeEncounterId) throw new ConvexError('Another interception is in progress.');
+    if (await ctx.db.query('slingshotEncounters').withIndex('by_flightId_and_catcherId', q => q.eq('flightId', flight!._id).eq('catcherId', profile._id)).unique()) throw new ConvexError('You already tried to catch this pigeon.');
     if (await areBlocked(ctx, profile._id, flight.senderId) || await areBlocked(ctx, profile._id, flight.recipientId)) throw new ConvexError('This pigeon cannot be caught.');
     const prior = await ctx.db.query('catchAttempts').withIndex('by_flightId_and_catcherId', (q) => q.eq('flightId', flight!._id).eq('catcherId', profile._id)).unique();
     if (prior && !prior.outcome && prior.expiresAt > now && flight.activeAttemptId === prior._id) {

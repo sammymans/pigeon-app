@@ -2,9 +2,15 @@ import { authTables } from '@convex-dev/auth/server';
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
 import { commerceTables } from './commerceSchema';
+import { starterRoomTables } from './starterRoomSchema';
+import { slingshotTables } from './slingshotSchema';
+import { courierTripTables } from './courierTripSchema';
 import { city, cityId, connectionState, defense, event, flightState, outcome, outfit, visibility } from './validators';
 
 export default defineSchema({
+  ...starterRoomTables,
+  ...slingshotTables,
+  ...courierTripTables,
   starterDemo: defineTable({ key: v.literal('shared'), value: v.number() }).index('by_key', ['key']),
   starterPairs: defineTable({
     ownerId: v.id('profiles'), partnerId: v.optional(v.id('profiles')), namespace: v.string(),
@@ -21,7 +27,9 @@ export default defineSchema({
     visibility, defense, distanceKm: v.number(), departedAt: v.number(), arrivesAt: v.number(),
     state: flightState, demo: v.boolean(), namespace: v.string(), requestKey: v.string(), openAcknowledged: v.optional(v.boolean()),
     courier: v.string(), shareToken: v.optional(v.string()), attemptCount: v.number(), catchOpen: v.boolean(),
+    tripId: v.optional(v.id('courierTrips')), tripLeg: v.optional(v.union(v.literal('outbound'), v.literal('return'), v.literal('empty_return'))),
     catcherId: v.optional(v.id('profiles')), activeAttemptId: v.optional(v.id('catchAttempts')),
+    activeEncounterId: v.optional(v.id('slingshotEncounters')),
     updatedAt: v.number(), events: v.array(event),
   }).index('by_senderId_and_requestKey', ['senderId', 'requestKey'])
     .index('by_senderId_and_demo', ['senderId', 'demo'])

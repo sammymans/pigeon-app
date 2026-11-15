@@ -5,6 +5,7 @@ import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import { areBlocked, opaqueToken, pairKey, requireSameNamespace } from './model';
+import { receiveCourier, trackDeparture } from './courierTripModel';
 
 export async function changeSkyCount(ctx: MutationCtx, demo: boolean, delta: number, now: number) {
   const stats = await ctx.db.query('skyStats').withIndex('by_demo', (q) => q.eq('demo', demo)).unique();
@@ -23,6 +24,7 @@ export async function settleFlight(ctx: MutationCtx, flight: Doc<'flights'>, now
     events: [...flight.events, { at: flight.arrivesAt, label: 'Delivered' }],
   };
   await ctx.db.patch('flights', flight._id, patch);
+  await receiveCourier(ctx, { ...flight, ...patch }, flight.recipientId, 'recipient', now);
   if (flight.visibility === 'open') await changeSkyCount(ctx, flight.demo, -1, now);
   return { ...flight, ...patch };
 }
@@ -37,9 +39,10 @@ export async function finishAttempt(ctx: MutationCtx, flight: Doc<'flights'>, at
     events: [...flight.events, { at: now, label: caught ? 'Intercepted' : outcome === 'expired' ? 'Catch attempt expired' : 'Outflew a catch attempt' }],
   });
   if (caught) await changeSkyCount(ctx, flight.demo, -1, now);
+  if (caught) await receiveCourier(ctx, { ...flight, state: 'intercepted', catcherId: attempt.catcherId }, attempt.catcherId, 'catcher', now);
 }
 
-export async function launchFor(ctx: MutationCtx, sender: Doc<'profiles'>, input: LaunchInput): Promise<Id<'flights'>> {
+export async function launchFor(ctx: MutationCtx, sender: Doc<'profiles'>, input: LaunchInput, options: { trackCourier?: boolean } = {}): Promise<Id<'flights'>> {
   const now = Date.now();
   if (!input.requestKey.trim() || input.requestKey.length > 128) throw new ConvexError('A valid launch request key is required.');
   if (!input.body.trim() || Array.from(input.body).length > 280) throw new ConvexError('Write a letter between 1 and 280 characters.');
@@ -75,6 +78,7 @@ export async function launchFor(ctx: MutationCtx, sender: Doc<'profiles'>, input
     attemptCount: 0, catchOpen: input.visibility === 'open', updatedAt: now, events: [{ at: now, label: 'Launched' }],
   });
   await ctx.db.insert('messages', { flightId: id, body: input.body, namespace: sender.namespace });
+  if (options.trackCourier) await trackDeparture(ctx, id, now);
   await ctx.scheduler.runAt(arrivesAt, internal.flights.settle, { flightId: id });
   if (input.visibility === 'open') {
     await changeSkyCount(ctx, input.demo, 1, now);
@@ -84,21 +88,24 @@ export async function launchFor(ctx: MutationCtx, sender: Doc<'profiles'>, input
 }
 
 export async function catchEligible(ctx: QueryCtx, flight: Doc<'flights'>, profile: Doc<'profiles'> | null) {
-  if (!profile || flight.state !== 'in_flight' || flight.visibility !== 'open' || !flight.catchOpen || flight.activeAttemptId || flight.attemptCount >= 2 || profile.catchCoolingDown) return false;
+  if (!profile || flight.state !== 'in_flight' || flight.visibility !== 'open' || flight.tripLeg === 'empty_return' || flight.activeAttemptId || flight.activeEncounterId) return false;
+  if (!flight.namespace.startsWith('demo:room-') && (!flight.catchOpen || flight.attemptCount >= 2 || profile.catchCoolingDown)) return false;
   if (flight.senderId === profile._id || flight.recipientId === profile._id || flight.namespace !== profile.namespace) return false;
   if (await areBlocked(ctx, profile._id, flight.senderId) || await areBlocked(ctx, profile._id, flight.recipientId)) return false;
+  if (await ctx.db.query('slingshotEncounters').withIndex('by_flightId_and_catcherId', q => q.eq('flightId', flight._id).eq('catcherId', profile._id)).unique()) return false;
   return !(await ctx.db.query('catchAttempts').withIndex('by_flightId_and_catcherId', (q) => q.eq('flightId', flight._id).eq('catcherId', profile._id)).unique());
 }
 
 export async function summaryProjection(ctx: QueryCtx, flight: Doc<'flights'>, viewer: Doc<'profiles'> | null) {
   const role = !viewer ? 'public' as const : viewer._id === flight.senderId ? 'sender' as const : viewer._id === flight.recipientId ? 'recipient' as const : viewer._id === flight.catcherId ? 'catcher' as const : 'public' as const;
   const sender = await ctx.db.get('profiles', flight.senderId);
+  const trip = flight.tripId ? await ctx.db.get('courierTrips', flight.tripId) : null;
   const recipient = role === 'sender' || role === 'recipient' ? await ctx.db.get('profiles', flight.recipientId) : null;
   return {
     id: flight._id, courier: flight.courier, origin: flight.origin, destination: flight.destination,
     visibility: flight.visibility, defense: flight.defense, distanceKm: flight.distanceKm,
     departedAt: flight.departedAt, arrivesAt: flight.arrivesAt, state: flight.state,
-    outfit: sender?.equipped ?? 'classic' as const, demo: flight.demo, role, attemptCount: flight.attemptCount,
+    outfit: trip?.courier.outfit ?? sender?.equipped ?? 'classic' as const, demo: flight.demo, role, attemptCount: flight.attemptCount,
     ...(flight.shareToken ? { shareToken: flight.shareToken } : {}),
     ...(role !== 'public' && sender ? { senderHandle: sender.handle } : {}),
     ...(recipient ? { recipientHandle: recipient.handle } : {}),
