@@ -1,13 +1,14 @@
 import { useAuthActions } from '@convex-dev/auth/react';
 import { useConvexAuth, useConvexConnectionState, useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
-import { Component, useRef, useState, type ReactNode } from 'react';
+import { Component, useRef, useState, type ComponentRef, type ReactNode } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../convex/_generated/api';
 import type { CityId } from '../src/domain';
 import { Mailbox } from './Mailbox';
-import { Button, CityPicker, Envelope, Field, Link, Loading, Notice, s } from './ui';
+import { Button, CityPicker, Field, Link, Loading, Notice, Wordmark, s } from './ui';
+import { PaperPigeon } from './PaperPigeon';
 
 type SetupMode = 'create' | 'join' | 'account';
 
@@ -15,7 +16,7 @@ function failure(cause: unknown, fallback: string): string {
   return cause instanceof ConvexError && typeof cause.data === 'string' ? cause.data : fallback;
 }
 
-export function LetterApp({ deployment }: { deployment: string }) {
+export function LetterApp({ deployment, onCatch, onReturn }: { deployment: string; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void }) {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const { signOut } = useAuthActions();
   const connection = useConvexConnectionState();
@@ -23,6 +24,7 @@ export function LetterApp({ deployment }: { deployment: string }) {
   const [diagnostic, setDiagnostic] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState('');
+  const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const connected = connection.isWebSocketConnected;
 
   async function leave() {
@@ -33,11 +35,11 @@ export function LetterApp({ deployment }: { deployment: string }) {
     finally { setSigningOut(false); }
   }
 
-  return <SafeAreaView style={s.safe}><KeyboardAvoidingView style={s.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.scroll}><View style={s.page}>
-    <View style={s.header}><View style={s.grow}><Text style={s.brand}>pigeon.</Text><Text style={s.eyebrow}>A little slower. A little closer.</Text></View><View style={s.row}><View style={[s.dot, !connected && s.disconnected]} /><Text accessibilityLiveRegion="polite" style={s.small}>{connected ? 'Connected' : 'Reconnecting'}</Text></View></View>
+  return <SafeAreaView style={s.safe}><KeyboardAvoidingView style={s.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={s.scroll}><View style={s.page}>
+    <View style={s.header}><View style={s.grow}><Wordmark /></View><View style={s.row}><View style={[s.dot, !connected && s.disconnected]} /><Text accessibilityLiveRegion="polite" style={s.small}>{connected ? 'Connected' : 'Offline'}</Text></View></View>
     {!connected && <Notice>The post office is reconnecting. Saved drafts stay on this device; delivery waits for the server.</Notice>}
     {diagnostic && <QueryBoundary><Diagnostic connected={connected} /></QueryBoundary>}
-    <View style={diagnostic ? { display: 'none' } : undefined}>{isLoading ? <Loading label="Restoring your sign-in…" /> : <QueryBoundary key={isAuthenticated ? 'signed-in' : 'signed-out'}>{isAuthenticated ? <SignedIn deployment={deployment} mode={mode} setMode={setMode} connected={connected} /> : <Welcome mode={mode} setMode={setMode} connected={connected} />}</QueryBoundary>}</View>
+    <View style={diagnostic ? { display: 'none' } : { flexGrow: 1 }}>{isLoading ? <Loading label="Restoring your sign-in…" /> : <QueryBoundary key={isAuthenticated ? 'signed-in' : 'signed-out'}>{isAuthenticated ? <SignedIn deployment={deployment} mode={mode} setMode={setMode} connected={connected} onCatch={onCatch} onReturn={onReturn} onNavigate={() => scroll.current?.scrollTo({ y: 0, animated: false })} /> : <Welcome mode={mode} setMode={setMode} connected={connected} />}</QueryBoundary>}</View>
     {error ? <Notice error>{error}</Notice> : null}
     <View style={s.divider} />
     <View style={s.between}><Link label={diagnostic ? '← Back to letters' : 'Connection diagnostic'} onPress={() => setDiagnostic(!diagnostic)} />{isAuthenticated && <Link label={signingOut ? 'Signing out…' : 'Sign out'} disabled={signingOut || !connected} onPress={() => void leave()} />}</View>
@@ -67,7 +69,7 @@ function Welcome({ mode, setMode, connected }: { mode: SetupMode; setMode: (mode
   }
 
   return <View style={s.stack}>
-    <View style={s.hero}><View style={s.illustration}><Envelope /></View><Text style={s.eyebrow}>PRIVATE LETTERS, REAL DISTANCE</Text><Text style={s.title}>Some things are{ '\n' }worth the wait.</Text><Text style={[s.body, s.muted]}>Send a small, sealed letter. Your pigeon takes the scenic route from your city to theirs.</Text></View>
+    <View style={s.hero}><View style={s.illustration}><PaperPigeon size={140} /></View><Text style={s.eyebrow}>LITTLE LETTERS, REAL DISTANCE</Text><Text style={s.title}>Some things are{ '\n' }worth the wait.</Text><Text style={[s.body, s.muted]}>Send a little piece of your day. Your pigeon takes the scenic route from your city to theirs.</Text></View>
     <View style={s.card}><ModeTabs mode={mode} setMode={(next) => { setMode(next); setError(''); }} disabled={busy} />
       {mode === 'account' ? <><Text style={s.subtitle}>Welcome back.</Text><Field label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} autoComplete="email" editable={!busy} /><Field label="Password" value={password} onChangeText={setPassword} secureTextEntry autoComplete="current-password" editable={!busy} /><Text style={s.small}>Use an existing Pigeon account. Regular accounts send at normal distance-based speed.</Text></> : <><Text style={s.subtitle}>{mode === 'create' ? 'A pair of pen pals.' : 'An invitation for you.'}</Text><Text style={s.body}>{mode === 'create' ? 'Start an isolated demo, then privately share a one-use invitation with someone on a second device.' : 'Have your partner’s private invitation ready. Joining connects only the two of you.'}</Text><Notice>Demo speed: 30–90 seconds. Normal travel estimates are always shown. No seeded letters or automatic replies.</Notice></>}
       {error ? <Notice error>{error}</Notice> : null}
@@ -78,14 +80,14 @@ function Welcome({ mode, setMode, connected }: { mode: SetupMode; setMode: (mode
 }
 
 function ModeTabs({ mode, setMode, disabled }: { mode: SetupMode; setMode: (mode: SetupMode) => void; disabled: boolean }) {
-  return <View accessibilityRole="tablist" style={s.tabs}>{([['create', 'Create pair'], ['join', 'Join pair'], ['account', 'Sign in']] as const).map(([value, label]) => <Pressable key={value} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: mode === value, disabled }} disabled={disabled} style={[s.tab, mode === value && s.tabActive]} onPress={() => setMode(value)}><Text style={s.tabText}>{label}</Text></Pressable>)}</View>;
+  return <View accessibilityRole="tablist" style={s.tabs}>{([['create', 'Create pair'], ['join', 'Join pair'], ['account', 'Sign in']] as const).map(([value, label]) => <Pressable key={value} accessibilityRole="tab" accessibilityLabel={label} aria-selected={mode === value} accessibilityState={{ selected: mode === value, disabled }} disabled={disabled} style={[s.tab, mode === value && s.tabActive]} onPress={() => setMode(value)}><Text style={[s.tabText, mode === value && s.tabActiveText]}>{label}</Text></Pressable>)}</View>;
 }
 
-function SignedIn({ deployment, mode, setMode, connected }: { deployment: string; mode: SetupMode; setMode: (mode: SetupMode) => void; connected: boolean }) {
+function SignedIn({ deployment, mode, setMode, connected, onCatch, onReturn, onNavigate }: { deployment: string; mode: SetupMode; setMode: (mode: SetupMode) => void; connected: boolean; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void; onNavigate: () => void }) {
   const profile = useQuery(api.profiles.me, {});
   if (profile === undefined) return <Loading label="Finding your nest…" />;
   if (profile === null) return <ProfileSetup mode={mode} setMode={setMode} connected={connected} />;
-  return <Mailbox key={profile.id} profile={profile} deployment={deployment} connected={connected} />;
+  return <Mailbox key={profile.id} profile={profile} deployment={deployment} connected={connected} onCatch={onCatch} onReturn={onReturn} onNavigate={onNavigate} />;
 }
 
 function ProfileSetup({ mode, setMode, connected }: { mode: SetupMode; setMode: (mode: SetupMode) => void; connected: boolean }) {

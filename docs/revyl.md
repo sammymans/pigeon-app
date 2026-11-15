@@ -19,6 +19,10 @@ Output: `ios/build/Build/Products/Release-iphonesimulator/ConvexStarter.app`. Do
 
 ## First-letter packaging boundary
 
+The exact UI at frozen source `4337d07` built successfully as `01M7GQJ8QC0QQVZZE6FBJ9D2AD`, artifact version `fd39db68-8696-436b-afac-337a17a57068`, using the whole clean source root rather than just `starter/`. It installed on a cloud iPhone, but native interaction verification stopped when Sammy rejected the visual approximation. The device was slept. This artifact is a reference, not design acceptance or native send/receive proof.
+
+The recipe installs the starter lockfile, runs prebuild from `starter/` with explicit `EXPO_PUBLIC_CONVEX_URL=https://helpful-kudu-864.convex.cloud`, installs CocoaPods under `starter/ios`, then builds `starter/ios/PigeonLetters.xcworkspace` / `PigeonLetters` in Release for the simulator with that same public environment value. Artifact path: `starter/ios/build/Build/Products/Release-iphonesimulator/PigeonLetters.app`.
+
 The letter frontend imports `../src/domain.ts` and `../convex/_generated/api`. Archiving `starter/` alone would omit those inputs. A future feature-native build must include this clean repository root (excluding dependencies, environments, runtime output and `.git`), install the starter lockfile, and prebuild from `starter/` with explicit public `EXPO_PUBLIC_CONVEX_URL`. Its app name is `Pigeon Letters`, so confirm the generated `PigeonLetters` workspace/scheme/output names. No feature-native build is claimed here. A simulator Release build embeds JS; it should not require the existing Metro or Expo token.
 
 Install only a successful build artifact on a Revyl cloud iOS device. For the counter, tap Increment and observe another client update. For letters, use independent authenticated identities and verify private pending → server delivery → read/reply. Capture the actual result, not just the build recipe. No sign-in bypass or fake account selector should be introduced for testing.

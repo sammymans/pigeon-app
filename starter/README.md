@@ -1,6 +1,6 @@
 # First-letter Expo starter
 
-A phone-sized, Expo Go-compatible frontend for the first sealed-letter slice. It loads no old product routes, Rive, commerce, catching, or custom native modules. `docs/first-letter-contract.md` defines the original implementation contract; the coordinated cloud deployment/preview is now authorized and verified as described in the root README.
+A phone-sized, Expo Go-compatible Paper map/letter frontend. It loads no old product routes, Rive or commerce. The only added rendering dependency is Expo-compatible `react-native-svg`; Pip uses the actual supplied Paper vector. `docs/first-letter-contract.md` is historical; the current Open Skies/legacy consent contract and verified preview are described in the root README.
 
 ## Configuration and verification
 
@@ -14,14 +14,14 @@ From the repository root, run `npm --prefix starter run typecheck` and `node_mod
 
 1. On one device or browser profile, choose **Create pair**, start the anonymous session, and choose a handle and home city.
 2. Reveal the private, expiring invitation only to share it with your partner. Hide it before screenshots or recordings. On a separate device/browser profile, the partner chooses **Join pair** and accepts that invitation. Browser tabs sharing local storage are not independent identities.
-3. Choose the accepted friend and write up to 280 Unicode codepoints. Demo accounts always use labeled 30–90-second travel, alongside the normal city-distance travel estimate. Existing Password accounts use normal time and their existing accepted friends.
+3. Choose the accepted friend and write up to 280 Unicode codepoints. New letters use Open Skies and need explicit acknowledgment that an eligible catcher can read them and prevent delivery. Body/recipient edits reset that acknowledgment. Demo accounts always use labeled 30–90-second travel, alongside the normal city-distance travel estimate. Existing Password accounts use normal time and their existing accepted friends.
 4. Send. The returned flight subscription supplies the exact route, departure, ETA, and state. Incoming letters never include body text in lists. The detail view shows text only after the server returns `delivered` and a body. Replies start blank and launch a new timed flight.
 
 ## Persistence and recovery
 
 Native auth tokens use Expo SecureStore; web uses Convex Auth’s namespaced local storage. Anonymous access belongs to the saved session; signing out does not provide a way to recover it or switch to the other partner.
 
-Drafts are stored locally in AsyncStorage, keyed by deployment and profile. They are not encrypted by AsyncStorage. Before any launch, the exact sealed payload and one request key are saved. An unacknowledged send stays immutable across retries and reloads; it cannot be silently edited into a second flight. The draft is cleared only after acknowledgement. If local cleanup fails after acknowledgement, the session retries cleanup without launching again. An unreadable saved draft is not silently overwritten.
+Drafts are stored locally in AsyncStorage, keyed by deployment and profile. They are not encrypted by AsyncStorage. Before launch, the exact payload and one request key are saved. Ambiguous/reloaded pending sends stay immutable across retries; old sealed payloads are never converted. Only a fresh launch definitively rejected by the server becomes editable again, retaining its text and requiring new Open Skies consent. Unsent old sealed drafts need explicit conversion. A server-accepted draft is cleared only after acknowledgment; failed cleanup retries without another launch. Unreadable storage is not silently overwritten.
 
 The display clock is anchored to `profiles.clock`, with reconnect/foreground refresh and `settleMine` recovery. Reaching zero means **Awaiting server confirmation**, never optimistic delivery. The public shared-counter diagnostic remains accessible from the footer, including before sign-in.
 

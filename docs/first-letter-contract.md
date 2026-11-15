@@ -1,5 +1,7 @@
 # First letter slice (YCCM-7)
 
+> Historical contract for the sealed two-person checkpoint. Current new-letter Open Skies behavior, Paper UI and legacy-draft migration are defined by the root README and current code. The original rules below do not override that later approved scope.
+
 This contract supersedes the wider integration contract only for the new `starter/` frontend. Preserve the old product and all existing backend capabilities. No live deployment, published preview, new credentials, native build, Rive, commerce, catching, or notification work.
 
 ## Ownership
