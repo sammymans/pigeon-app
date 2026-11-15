@@ -3,7 +3,7 @@ import { ConvexError } from 'convex/values';
 import { randomUUID } from 'expo-crypto';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LaunchInput } from '../src/domain';
-import { draftStorageKey, editDraft, emptyDraft, replyDraft, restoreDraft, sealDraft, type Draft } from './letterModel';
+import { acknowledgeOpenSkies as acknowledgeDraft, convertLegacyToOpenSkies as convertDraft, draftStorageKey, editDraft, emptyDraft, replyDraft, restoreDraft, sealDraft, type Draft } from './letterModel';
 
 export function useDraft(deployment: string, profileId: string, demo: boolean) {
   const key = draftStorageKey(deployment, profileId);
@@ -56,15 +56,27 @@ export function useDraft(deployment: string, profileId: string, demo: boolean) {
   }, [key]);
 
   function edit(changes: Partial<Pick<Draft, 'body' | 'recipientId'>>) {
-    if (!current.current || sending.current || acknowledged.current) return;
+    if (!current.current || current.current.pending || sending.current || acknowledged.current) return;
     setError('');
     void persist(editDraft(current.current, changes)).catch(() => {});
   }
 
   function startReply(recipientId: string) {
-    if (!current.current || sending.current || acknowledged.current) return;
+    if (!current.current || current.current.pending || sending.current || acknowledged.current) return;
     setError('');
     void persist(replyDraft(current.current, recipientId)).catch(() => {});
+  }
+
+  function convertLegacyToOpenSkies() {
+    if (!current.current || current.current.pending || sending.current || acknowledged.current) return;
+    setError('');
+    void persist(convertDraft(current.current)).catch(() => {});
+  }
+
+  function acknowledgeOpenSkies(value: boolean) {
+    if (!current.current || current.current.visibility !== 'open' || current.current.pending || sending.current || acknowledged.current) return;
+    setError('');
+    void persist(acknowledgeDraft(current.current, value)).catch(() => {});
   }
 
   async function send(launch: (input: LaunchInput) => Promise<{ id: string }>): Promise<string | null> {
@@ -72,11 +84,12 @@ export function useDraft(deployment: string, profileId: string, demo: boolean) {
     sending.current = true;
     setBusy(true);
     setError('');
-    let stage: 'persist' | 'launch' | 'cleanup' = 'persist';
+    let stage: 'prepare' | 'persist' | 'launch' | 'cleanup' = 'prepare';
     try {
       let id = acknowledged.current;
       if (!id) {
         const sealed = sealDraft(current.current, demo, current.current.pending?.requestKey ?? randomUUID());
+        stage = 'persist';
         await persist(sealed);
         stage = 'launch';
         const result = await launch(sealed.pending!);
@@ -91,10 +104,11 @@ export function useDraft(deployment: string, profileId: string, demo: boolean) {
       setReceipt(null);
       return id;
     } catch (cause) {
-      if (stage === 'cleanup') setError('The server accepted your letter. Local draft cleanup failed; finish cleanup before writing another.');
-      else if (stage === 'persist') setError('The sealed draft could not be saved. No new send was attempted. Retry safely with the same letter.');
-      else if (cause instanceof ConvexError && typeof cause.data === 'string') setError(`${cause.data} Your sealed letter is kept for the same retry.`);
-      else setError('Send confirmation did not arrive. This letter may already be flying. Retry the same sealed letter to confirm, without sending a duplicate.');
+      if (stage === 'prepare') setError(cause instanceof Error ? cause.message : 'This draft is not ready to send.');
+      else if (stage === 'cleanup') setError('The server accepted your letter. Local draft cleanup failed; finish cleanup before writing another.');
+      else if (stage === 'persist') setError('The prepared draft could not be saved. No new send was attempted. Retry safely with the same letter.');
+      else if (cause instanceof ConvexError && typeof cause.data === 'string') setError(`${cause.data} Your exact letter is kept for the same retry.`);
+      else setError('Send confirmation did not arrive. This letter may already be flying. Retry the same saved letter to confirm, without sending a duplicate.');
       return null;
     } finally {
       sending.current = false;
@@ -108,5 +122,5 @@ export function useDraft(deployment: string, profileId: string, demo: boolean) {
     void persist(current.current).catch(() => {});
   }
 
-  return { draft, error, saved, busy, receipt, edit, startReply, send, retryStorage, locked: Boolean(draft?.pending || receipt) };
+  return { draft, error, saved, busy, receipt, edit, startReply, send, retryStorage, acknowledgeOpenSkies, convertLegacyToOpenSkies, legacySealedDraft: draft?.visibility === 'sealed' && !draft.pending, pendingRetry: Boolean(draft?.pending), locked: Boolean(draft?.pending || receipt) };
 }
