@@ -5,6 +5,7 @@ import { commerceTables } from './commerceSchema';
 import { city, cityId, connectionState, defense, event, flightState, outcome, outfit, visibility } from './validators';
 
 export default defineSchema({
+  starterDemo: defineTable({ key: v.literal('shared'), value: v.number() }).index('by_key', ['key']),
   ...authTables,
   ...commerceTables,
   profiles: defineTable({

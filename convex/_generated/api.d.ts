@@ -19,6 +19,7 @@ import type * as http from "../http.js";
 import type * as model from "../model.js";
 import type * as profiles from "../profiles.js";
 import type * as social from "../social.js";
+import type * as starterDemo from "../starterDemo.js";
 import type * as validators from "../validators.js";
 import type * as whop from "../whop.js";
 import type * as whopNode from "../whopNode.js";
@@ -42,6 +43,7 @@ declare const fullApi: ApiFromModules<{
   model: typeof model;
   profiles: typeof profiles;
   social: typeof social;
+  starterDemo: typeof starterDemo;
   validators: typeof validators;
   whop: typeof whop;
   whopNode: typeof whopNode;
