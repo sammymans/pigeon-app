@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "test": "vitest run",
+    "test": "vitest run && vitest run --config starter/vitest.config.ts",
     "typecheck": "tsc -p convex && npm --prefix starter run typecheck",
     "check": "npm run test && npm run typecheck"
   },

@@ -18,6 +18,12 @@ export function profileProjection(profile: Doc<'profiles'>) {
   return { id: profile._id, handle: profile.handle, cityId: profile.cityId, equipped: profile.equipped, demo: profile.demo };
 }
 
+export function normalizeHandle(value: string) {
+  const handle = value.trim().replace(/^@/, '').toLowerCase();
+  if (!/^[a-z0-9_]{3,24}$/.test(handle)) throw new ConvexError('Use 3–24 lowercase letters, numbers, or underscores.');
+  return handle;
+}
+
 export function pairKey(a: Id<'profiles'>, b: Id<'profiles'>) {
   return [a, b].sort().join(':');
 }

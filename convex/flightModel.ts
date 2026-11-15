@@ -50,7 +50,7 @@ export async function launchFor(ctx: MutationCtx, sender: Doc<'profiles'>, input
   const existing = await ctx.db.query('flights').withIndex('by_senderId_and_requestKey', (q) => q.eq('senderId', sender._id).eq('requestKey', input.requestKey)).unique();
   if (existing) {
     const message = await ctx.db.query('messages').withIndex('by_flightId', (q) => q.eq('flightId', existing._id)).unique();
-    if (existing.recipientId !== recipientId || existing.visibility !== input.visibility || existing.defense !== input.defense || existing.demo !== input.demo || message?.body !== input.body) throw new ConvexError('That request key belongs to a different letter.');
+    if (existing.recipientId !== recipientId || existing.visibility !== input.visibility || existing.defense !== input.defense || existing.demo !== input.demo || (existing.openAcknowledged !== undefined && existing.openAcknowledged !== input.openAcknowledged) || message?.body !== input.body) throw new ConvexError('That request key belongs to a different letter.');
     return existing._id;
   }
   const recipient = await ctx.db.get('profiles', recipientId);
@@ -70,7 +70,7 @@ export async function launchFor(ctx: MutationCtx, sender: Doc<'profiles'>, input
   const id = await ctx.db.insert('flights', {
     senderId: sender._id, recipientId, origin, destination, visibility: input.visibility, defense: input.defense,
     distanceKm: distance, departedAt: now, arrivesAt, state: 'in_flight', demo: input.demo,
-    namespace: sender.namespace, requestKey: input.requestKey, courier: ['Pip', 'Coo', 'Mochi', 'Bean', 'Postie'][Math.floor(Math.random() * 5)],
+    namespace: sender.namespace, requestKey: input.requestKey, openAcknowledged: input.openAcknowledged, courier: ['Pip', 'Coo', 'Mochi', 'Bean', 'Postie'][Math.floor(Math.random() * 5)],
     ...(input.visibility === 'open' ? { shareToken: opaqueToken() } : {}),
     attemptCount: 0, catchOpen: input.visibility === 'open', updatedAt: now, events: [{ at: now, label: 'Launched' }],
   });

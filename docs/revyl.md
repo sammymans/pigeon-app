@@ -1,20 +1,12 @@
-# Standalone iOS build lane
+# Native build scope and automation
 
-Expo Go phone access and a Revyl standalone simulator build are separate checks. Use Capy's cloud mobile build path, not either person's Mac or a copied CLI key. A Revyl organization admin must approve Capy's connection before upload/build; a `REVYL_API_KEY` alone does not grant that approval.
+Expo Go preview, a standalone native build, and automatic Revyl PR proofs are separate results. Use Capy's cloud mobile build path, never either person's Mac or copied CLI credentials.
 
-The single attempt from the verified Sammy-owned thread on November 15, 2026 was refused for that pending approval before upload. There is no build ID, artifact, installed simulator app, or native test from this attempt. This recipe has not yet run on the native builder.
+## Current native checkpoint: original counter only
 
-Archive only `starter/` as the build workspace. Its `.capyignore` excludes local environment files; the endpoint is already public source configuration. No Expo token or Convex deploy key is required for an unsigned simulator build.
+After organization approval, build `01M7GN90AADSSMDEVJWWKDJYYH` succeeded for the **counter at foundation commit `16db591`**, from its isolated `starter/` directory. Version `c3344f81-f696-4413-9300-5103f9c1eb3c` was installed on a Revyl cloud iPhone 16. Capy observed the connected screen, tapped Increment once, and verified both the native display and an independent Convex subscription changed from 6 to 7. This is a standalone counter build/device proof, not a native build of the first-letter slice or a physical-phone test.
 
-Commands on the remote macOS build runner:
-
-```sh
-npm ci
-CI=1 npx expo prebuild --platform ios --no-install
-cd ios && pod install
-```
-
-Then, from the archived app root:
+The counter's remote recipe is `npm ci`, `CI=1 npx expo prebuild --platform ios --no-install`, `cd ios && pod install`, then from its app root:
 
 ```sh
 xcodebuild -workspace ios/ConvexStarter.xcworkspace \
@@ -23,20 +15,16 @@ xcodebuild -workspace ios/ConvexStarter.xcworkspace \
   -derivedDataPath ios/build CODE_SIGNING_ALLOWED=NO build
 ```
 
-Expected output: `ios/build/Build/Products/Release-iphonesimulator/ConvexStarter.app`. Release embeds JavaScript rather than depending on the phone's existing Metro. Expo generates the workspace/scheme from the app name; confirm those names in prebuild output before interpreting a build failure.
+Output: `ios/build/Build/Products/Release-iphonesimulator/ConvexStarter.app`. Do not run that recipe against this branch's renamed/shared-source frontend and claim it is the same artifact.
 
-Install a successful artifact on a Revyl cloud iOS device, launch it, and verify the counter interaction. Until an actual build ID, artifact, and device result exist, do not claim native validation. If the platform refuses for pending organization approval, an admin must open **Settings → Integrations → Revyl** and approve the Capy connection in Revyl; do not retry in a loop or bypass that approval through the CLI.
+## First-letter packaging boundary
 
-## What runs on the next change
+The letter frontend imports `../src/domain.ts` and `../convex/_generated/api`. Archiving `starter/` alone would omit those inputs. A future feature-native build must include this clean repository root (excluding dependencies, environments, runtime output and `.git`), install the starter lockfile, and prebuild from `starter/` with explicit public `EXPO_PUBLIC_CONVEX_URL`. Its app name is `Pigeon Letters`, so confirm the generated `PigeonLetters` workspace/scheme/output names. No feature-native build is claimed here. A simulator Release build embeds JS; it should not require the existing Metro or Expo token.
 
-The included GitHub Actions workflow runs the in-memory counter regression test, frontend/backend TypeScript checks, and Expo dependency compatibility on pull requests and pushes to `main`. It does not build or launch iOS, contact Convex, or invoke Revyl.
+Install only a successful build artifact on a Revyl cloud iOS device. For the counter, tap Increment and observe another client update. For letters, use independent authenticated identities and verify private pending → server delivery → read/reply. Capture the actual result, not just the build recipe. No sign-in bypass or fake account selector should be introduced for testing.
 
-Once approval is resolved, Capy can repeat the cloud build recipe above for the changed starter, install the returned artifact on a cloud iOS device, read the counter, tap Increment, verify an independent Convex subscription observes the same update, and attach screenshots/logs. This is an agent-driven execution on request, not an automatic GitHub PR trigger. Coordinate the shared counter write with the phone tester; do not restart their Metro.
+## Next-change triggers
 
-## Revyl Proof of Changes is a separate setup
+The GitHub workflow runs in-memory regression tests, frontend/backend TypeScript, and Expo compatibility on PRs and pushes to `main`. It does not build/launch iOS or deploy Convex. Capy can repeat an authorized build/install/interaction loop; that agent-driven run is not an automatic GitHub trigger.
 
-No `.revyl/config.yaml` has been published for this starter by this work, and the Revyl GitHub App's repository connection and enabled project status have not been verified under this thread's account. **Automatic Revyl PR proofs are not established.** A successful manual build would not change that claim.
-
-The [official setup instructions](https://revyl.com/agent-setup/prompt.md?ref=d8202742397e625bd184031e) require authenticated CLI configuration for the `starter/` project root, a real project/app ID, a successful standalone `preview` build recipe, repository access through the Revyl GitHub App, and validated/published configuration with both `pr_review.enabled` and `pr_review.proof_of_changes.enabled` set to true. Confirm with `revyl github status --json` that the repository is connected and `project.status` is `enabled`, as well as the published Proof of Changes flag. Obtain missing credentials securely; never copy them from an old owner's thread. The native build itself continues through Capy's required build path.
-
-The starter has no sign-in screen, so no auth bypass, test account, or backend auth change is needed for counter proofs. Do not invent project/app IDs or publish an untested build recipe merely to show the integration as enabled.
+Automatic Revyl Proof of Changes remains **unestablished**. No starter config was published by this work and no authenticated repository connection/enabled project state was verified. The [official setup](https://revyl.com/agent-setup/prompt.md?ref=d8202742397e625bd184031e) separately requires a real project/app ID, a proven standalone preview recipe, Revyl GitHub App access, validated/published config with both PR review and Proof of Changes enabled, and a successful `revyl github status --json` confirmation. Obtain any missing access securely; never invent IDs or publish an untested recipe.
