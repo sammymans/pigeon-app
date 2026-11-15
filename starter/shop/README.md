@@ -1,0 +1,29 @@
+# Isolated shop scaffold
+
+This folder is the whole change. It has no app entry point, navigation, provider initialization, network request on import, storage, new dependency, schema edit or gameplay effect. Render `ShopScreen` under the app's existing `SafeAreaProvider`; pass `onBack` when the integrator adds navigation. With no other props it is a free placeholder preview and a disabled checkout panel. The user needs nothing to try this placeholder.
+
+## Placeholder versus real
+
+There is one explicitly labeled future cosmetic slot, not a product or SKU. Its price is “to be decided.” The image is existing Pip artwork, not an invented outfit. Opening and closing the detail view changes only local selection. It never buys, owns, equips, or grants anything.
+
+`assets/pip.svg` is the exact artwork string from `starter/PaperPigeon.tsx` in the Captain's `handoffs/pigeon-paper-v1/paper-v1.patch`, extracted by JSON decoding. Its source is Paper file `01M7GFFP9QE40C6END0X03AYCB`, page `p-4-0`, node `ZJ-0` (Pip / Small & curious): https://app.paper.design/file/01M7GFFP9QE40C6END0X03AYCB/p-4-0. `pip.png` is a transparent 512px CairoSVG raster of that same SVG for native `Image`, avoiding a new SVG dependency. No vector geometry or colors changed. The source SVG is retained for editing/replacement later.
+
+## Existing commerce adapter
+
+`createCommerceAdapter(existingConvexClient)` exposes only reads: `catalog()`, `receipt(orderId)`, and `ownership()`. It reuses `api.commerce.catalog`, `api.commerce.order`, and `api.commerce.ownership`; generated API types define the contracts. Errors propagate so the integrator can distinguish failure from empty state. Set the view to `loading` before a read, `error` on rejection, and pass the resulting state on success. Prefer existing reactive `useQuery` subscriptions with `catalogFromCommerce` / `receiptFromCommerce` in the real app. Clear account-scoped state on sign-out or identity change; never show another account's cached order. The adapter creates no second source of ownership truth.
+
+The baseline catalog returns only `{ configured, priceLabel, testMode }`. `configured` means environment settings exist; it does **not** prove a working key or SKU. The label is hard-coded in the old server. Accordingly this adapter always maps the legacy response to `unconfigured`, with distinct missing-settings and unverified-catalog copy. It does not display that label as a configured price. The previous 401 key probes remain unresolved. No provider credentials or live services were read or called in this phase.
+
+`SandboxCheckout` separately supports loading, empty, error/retry, unconfigured and ready rendering. **Do not pass `ready` until a server-validated sandbox catalog supplies the offer.** There is no such producer in this baseline; the default and current adapter cannot enable checkout. `SandboxOffer` is a presentation contract, not a verification claim or an authorization token. Once an approved future implementation verifies the real sandbox variant/account/amount/currency, it can pass that exact amount and `testMode: true`, then wire `onCheckout(sku)` to the existing `api.commerce.checkout` action using a stable request key. Without that callback checkout is still disabled. Never derive ready state from URL params, local storage, client prices, or the old `configured` flag. The existing server currently only supports the legacy Aviator SKU and its fixed amount; different products/prices need a separately approved server change, not a frontend override.
+
+`ShopReceipt` accepts only a server-query result. It covers pending, paid, failed/canceled, refunded and reconciliation plus loading/error/not-found. Returning from or canceling a hosted checkout is **not** payment confirmation and doesn't change the order. `onRefresh` rereads the same authenticated order; it never starts a new payment. There is no retry-payment, purchase URL opener, entitlement grant, equip mutation, or ownership cache in this module. A paid receipt deliberately does not imply a current entitlement after refunds; any later equip UI must use `commerce.ownership` and server-authorized `commerce.equip`.
+
+## Later, not required now
+
+The server already owns Whop hosted checkout, raw-body signature verification, event deduplication, authenticated orders, and account/order/variant/currency/amount binding. Keep those boundaries. No card fields or native payment SDK belong here. This handoff does not create products, accounts, webhooks or payment sessions and does not deploy anything.
+
+Later setup names are `WHOP_SANDBOX_API_KEY`, `WHOP_SANDBOX_WEBHOOK_SECRET`, `WHOP_SANDBOX_ACCOUNT_ID`, `WHOP_SANDBOX_VARIANT_ID`, and `PIGEON_PUBLIC_ORIGIN`. A person will create a valid **sandbox** key in their Whop developer/API-key settings with access to the selected sandbox account's variants and payments (read) and checkout configurations (create); the webhook signing secret comes from the sandbox webhook setup. Exact current permission labels must be checked then. Keys and secrets stay in server-side Convex environment settings, never `EXPO_PUBLIC_*`. Final SKUs, prices, cosmetic designs and a validated return route remain undecided. Do not request credentials for the placeholder phase.
+
+## Verification
+
+`npm --prefix starter run typecheck` and `npx vitest run --config starter/vitest.config.ts` cover the module alongside existing starter tests. Existing commerce security tests are `npx vitest run convex/commerce.test.ts`. Screenshots in the Drive handoff are isolated React Native Web renders at 390 and 320 pixels; provider responses and order states in the harness are explicitly synthetic. They are not native-device or live-Whop proof. Native VoiceOver/TalkBack and actual Expo Go behavior remain part of the integrator's later checkpoint. All controls are 44px or larger, text wraps, and layout scrolls with native font scaling enabled.
