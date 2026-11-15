@@ -1,55 +1,83 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { AccessibilityInfo, ActivityIndicator, AppState, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, AppState, Platform, Pressable, StyleSheet, Text, View, type GestureResponderEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { CONNECTION_REQUEST } from '../../src/domain';
-import { CatchSession, catchError, sessionFrame } from './CatchSession';
-import type { CatchGameProps } from './contract';
+import type { CatchGameProps, Encounter } from './contract';
+import { isFinished, SlingshotSession } from './SlingshotSession';
+import { FLIGHT_MS, GAME_VERSION, PLAY_MS, pullDirection, SCENE, sceneTransform, stoneAt, targetAt, traceShot, type Point } from './trajectory';
 
-export function CatchGame(props: CatchGameProps) {
-  return <Game key={props.flightId} {...props} />;
-}
+const BLUE = '#2453FF';
+const INK = '#17212B';
+const MUTED = '#566273';
 
-function Game({ flightId, flight: incoming, connected, transport, onExit, flightError, onRetryFlight, onRequestConnection }: CatchGameProps) {
-  const flight = incoming?.id === flightId ? incoming : incoming ? undefined : incoming;
-  const [session] = useState(() => new CatchSession(flightId, transport));
-  const state = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
-  const [active, setActive] = useState(AppState.currentState !== 'background' && AppState.currentState !== 'inactive');
-  const [reduced, setReduced] = useState(false);
-  const [laneWidth, setLaneWidth] = useState(0);
-  const [requestState, setRequestState] = useState<'idle' | 'sending' | 'sent'>('idle');
-  const [requestError, setRequestError] = useState('');
-  const requestBusy = useRef(false);
-  const frame = sessionFrame(state);
-  const { result, attempt } = state;
-  const available = connected && active;
-  const eligible = Boolean(flight?.canCatch && flight.visibility === 'open' && flight.state === 'in_flight');
-  const canRead = result?.outcome === 'caught' && flight?.role === 'catcher' && flight.state === 'intercepted' && flight.body !== undefined;
+export function CatchGame(props: CatchGameProps) { return <Game key={props.flightId} {...props} />; }
 
+function Game({ flightId, connected, transport, onExit, onOpenLetter, flightError, onRetryFlight }: CatchGameProps) {
+  const [session] = useState(() => new SlingshotSession(flightId, transport));
+  const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
+  const [practice, setPractice] = useState(false);
+  const mounted = useRef(false);
   useEffect(() => {
-    const listener = AppState.addEventListener('change', next => {
-      const foreground = next === 'active';
-      if (!foreground) session.setAvailable(false);
-      setActive(foreground);
-    });
-    function visibility() {
-      const foreground = document.visibilityState === 'visible';
-      if (!foreground) session.setAvailable(false);
-      setActive(foreground);
-    }
-    if (Platform.OS === 'web') {
-      visibility();
-      document.addEventListener('visibilitychange', visibility);
-    }
+    mounted.current = true;
+    session.setAvailable(connected);
+    void session.load();
+    const change = (active: boolean) => { session.setAvailable(connected && active); };
+    const listener = AppState.addEventListener('change', state => change(state === 'active'));
+    const visibility = () => change(document.visibilityState === 'visible');
+    if (Platform.OS === 'web') document.addEventListener('visibilitychange', visibility);
     return () => {
       listener.remove();
       if (Platform.OS === 'web') document.removeEventListener('visibilitychange', visibility);
+      mounted.current = false;
+      queueMicrotask(() => { if (!mounted.current) session.setAvailable(false); });
     };
-  }, [session]);
-
+  }, [session, connected]);
   useEffect(() => {
-    session.setAvailable(available);
-    return () => session.setAvailable(false);
-  }, [session, available]);
+    let raf = 0;
+    const tick = () => { session.tick(); raf = requestAnimationFrame(tick); };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [session]);
+  if (practice) return <PracticeGame onExit={() => setPractice(false)} />;
+  const { data } = snapshot;
+  return <Scene encounter={data?.encounter ?? null} now={snapshot.now} count={data?.pouch.count ?? null} nextRefillAt={data?.pouch.nextRefillAt ?? null}
+    loading={!data && !snapshot.error} busy={snapshot.busy} drag={snapshot.drag} armed={snapshot.armed} error={snapshot.error || flightError || (!connected ? 'Reconnecting. This attempt cannot resume after an interruption.' : '')}
+    onBegin={point => session.begin(point)} onMove={point => session.move(point)} onRelease={() => session.release()}
+    onExit={() => { void session.end(); onExit({ flightId, outcome: data?.encounter?.state ?? null }); }}
+    onRetry={() => { void session.retry(); onRetryFlight?.(); }}
+    onOpenLetter={() => { if (data?.encounter?.state === 'caught') onOpenLetter({ flightId }); }}
+    onPractice={() => setPractice(true)} />;
+}
+
+type SceneProps = {
+  encounter: Encounter | null; now: number; count: number | null; nextRefillAt: number | null;
+  drag: Point | null; armed: boolean; busy?: boolean; loading?: boolean; error?: string; practice?: boolean;
+  onBegin: (point: Point) => boolean; onMove: (point: Point) => void; onRelease: () => void;
+  onExit: () => void; onRetry?: () => void; onOpenLetter?: () => void; onPractice?: () => void;
+};
+
+function Scene({ encounter: e, now, count, nextRefillAt, drag, armed, busy, loading, error, practice, onBegin, onMove, onRelease, onExit, onRetry, onOpenLetter, onPractice }: SceneProps) {
+  const [size, setSize] = useState({ width: 390, height: 760 });
+  const [reduced, setReduced] = useState(false);
+  const [help, setHelp] = useState(false);
+  const touch = useRef<{ page: Point; logical: Point } | null>(null);
+  const transform = sceneTransform(size.width, size.height);
+  const { scale } = transform;
+  const done = isFinished(e?.state);
+  const empty = count === 0 && !e;
+  const caught = e?.state === 'caught';
+  const shot = e?.shots.find(shot => shot.outcome === 'flying');
+  const used = e?.shots.length ?? 0;
+  const limit = e?.shotLimit ?? 2;
+  const remaining = Math.max(0, limit - used);
+  const elapsed = e ? Math.max(0, now - e.preparedAt) : 0;
+  const target = targetAt(elapsed, e?.seed ?? 0);
+  const direction = drag ? pullDirection(drag) : null;
+  const drawLength = drag ? Math.min(96, Math.hypot(drag.x, drag.y)) : 0;
+  const loaded = direction ? { x: SCENE.fork.x - direction.x * drawLength, y: SCENE.fork.y - direction.y * drawLength } : SCENE.fork;
+  const inFlightPosition = shot ? stoneAt(Math.min(now - shot.releasedAt, shot.endsAt - shot.releasedAt), shot.direction) : null;
+  const clock = e?.fireUntil ? Math.max(0, Math.ceil((e.fireUntil - now) / 1000)) : 10;
+  const label = practice ? 'Free practice' : caught ? 'Caught' : done ? 'Escaped' : empty ? 'Your stones' : e?.armedAt !== null && e ? `0:${String(clock).padStart(2, '0')}` : 'Slingshot';
+  const eyebrow = caught ? `${used === 1 ? 'FIRST' : 'SECOND'} SHOT · RIGHT ON TARGET` : done ? e?.state === 'delivered' ? 'ARRIVAL TAKES PRIORITY' : e?.state === 'abandoned' ? 'ENCOUNTER ENDED' : `${used} SHOT${used === 1 ? '' : 'S'} USED` : empty ? 'YOUR POUCH IS EMPTY' : shot ? `SHOT ${used} IN FLIGHT` : used > 0 ? 'ONE SHOT LEFT' : drag && armed ? `SHOT 1 OF ${limit}` : `${limit === 1 ? 'ONE SHOT' : 'TWO SHOTS'} AT THIS PIGEON`;
 
   useEffect(() => {
     let live = true;
@@ -57,123 +85,121 @@ function Game({ flightId, flight: incoming, connected, transport, onExit, flight
     const listener = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduced);
     return () => { live = false; listener.remove(); };
   }, []);
+  useEffect(() => { if (done) AccessibilityInfo.announceForAccessibility(caught ? practice ? 'Practice hit.' : 'Server confirmed: pigeon caught.' : practice ? 'Practice round finished.' : 'Server confirmed: encounter ended without a catch.'); }, [done, caught, practice]);
 
-  useEffect(() => {
-    if (!attempt || result || !active) return;
-    let raf = 0;
-    const tick = () => { session.tick(); raf = requestAnimationFrame(tick); };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [session, attempt, result, active]);
-
-  useEffect(() => {
-    if (result) AccessibilityInfo.announceForAccessibility(result.outcome === 'caught' ? 'Server confirmed: pigeon caught.' : result.outcome === 'delivered' ? 'Server confirmed: pigeon delivered.' : 'Server confirmed: no catch.');
-  }, [result]);
-
-  async function requestConnection() {
-    if (!onRequestConnection || requestBusy.current || !connected || !canRead || !flight?.canRequest) return;
-    requestBusy.current = true;
-    setRequestState('sending');
-    setRequestError('');
-    try { await onRequestConnection(); setRequestState('sent'); }
-    catch (error) { setRequestState('idle'); setRequestError(catchError(error, 'Request not confirmed. You can retry the same fixed invitation.')); }
-    finally { requestBusy.current = false; }
+  function point(event: GestureResponderEvent) {
+    return touch.current ? { x: touch.current.logical.x + (event.nativeEvent.pageX - touch.current.page.x) / scale, y: touch.current.logical.y + (event.nativeEvent.pageY - touch.current.page.y) / scale } : SCENE.fork;
   }
-
-  const title = !result ? 'Catch a pigeon.' : result.outcome === 'caught' ? 'Special delivery.\nWrong person.' : result.outcome === 'delivered' ? 'Just made it home.' : 'Outflew you.';
-  return <SafeAreaView style={s.safe}><ScrollView contentContainerStyle={s.scroll}><View style={s.page}>
-    <View style={s.header}><Text style={s.brand}>pigeon.</Text><Text style={s.tag}>CATCH / PLACEHOLDER</Text></View>
-    <View style={s.stack}><Text accessibilityRole="header" style={s.title}>{title}</Text><Text style={s.body}>A timing game for Open Skies letters. Final game art and slingshot design are still to come.</Text></View>
-    <View style={s.route}><Text style={s.routeTitle}>{flight ? `${flight.courier} → ${flight.destination.name}` : 'Selected flight'}</Text><Text style={s.small}>{flight?.demo ? 'Demo speed · ' : ''}{(attempt?.defense ?? flight?.defense) === 'zigzag' ? 'Zigzag · 3 hits needed' : 'Cruise · 2 hits needed'}</Text></View>
-    {!connected && <Notice>Connection lost. No new taps or attempts. An unfinished attempt expires as a miss; reconnect to confirm its result.</Notice>}
-    {!active && <Notice>The game was interrupted. Its timer does not pause.</Notice>}
-    {reduced && <Text style={s.small}>Reduced motion: no decorative animation. The target still moves at its true scoring position.</Text>}
-    {result ? <View style={s.stack}>
-      <Text style={s.confirmed}>SERVER CONFIRMED · {result.hits.filter(Boolean).length}/3 HITS</Text>
-      <Text style={s.body}>{result.outcome === 'caught' ? 'This letter will not reach its intended recipient.' : result.outcome === 'delivered' ? 'Arrival takes priority. The intended recipient can now read the letter.' : result.outcome === 'expired' ? 'The reservation expired without a catch. The original arrival time was not changed.' : 'No catch this time. The pigeon keeps its original journey.'}</Text>
-      {result.outcome === 'caught' && (canRead ? <View style={s.letter}><Text style={s.tag}>INTERCEPTED LETTER</Text><Text selectable style={s.letterBody}>{flight!.body}</Text><Text style={s.small}>From @{flight!.senderHandle}</Text></View> : <Notice>The catch is confirmed. Waiting for your authorized letter view to refresh.</Notice>)}
-      {canRead && onRequestConnection && <View style={s.stack}>
-        {requestState === 'sent' ? <Notice>Connection request sent. Letters can be exchanged only after acceptance.</Notice> : flight?.canRequest ? <><Text style={s.body}>{CONNECTION_REQUEST}</Text><Action label={requestState === 'sending' ? 'Sending request…' : 'Ask to connect'} disabled={!connected || requestState === 'sending'} onPress={() => void requestConnection()} /></> : <Text style={s.small}>No new connection request is available for this sender.</Text>}
-        {requestError ? <Notice error>{requestError}</Notice> : null}
-      </View>}
-    </View> : !attempt ? <View style={s.stack}>
-      {incoming === undefined && !flightError ? <View style={s.loading}><ActivityIndicator color="#2453FF" /><Text style={s.body}>Checking this flight…</Text></View> : flight === null ? <Notice>This flight is private, finished, or unavailable.</Notice> : <>
-        <View style={s.instructions}><Text style={s.instructionTitle}>Three rounds. Two seconds each.</Text><Text style={s.body}>Tap Catch once per round when the center dot is inside the net. Cruise needs two hits; Zigzag needs all three.</Text><Text style={s.small}>Starting uses your one attempt on this flight. Leaving or losing connection does not restart it.</Text></View>
-        {!eligible && state.phase !== 'reserve-error' && <Notice>This flight cannot be caught right now. It may be protected, reserved, already attempted, or within 15 seconds of arrival.</Notice>}
-        <Action label={state.phase === 'reserving' ? 'Reserving flight…' : state.phase === 'reserve-error' ? 'Retry reservation' : 'Start catch'} disabled={!available || Boolean(flightError) || state.phase === 'reserving' || (!eligible && state.phase !== 'reserve-error')} onPress={() => void session.reserve()} />
-      </>}
-    </View> : frame && <View style={s.stack}>
-      <View style={s.between}><Text style={s.round}>{frame.finished ? 'THREE ROUNDS COMPLETE' : `ROUND ${frame.round + 1} / 3`}</Text><Text style={s.timer}>{frame.finished ? '0.0s' : `${((2000 - state.elapsed % 2000) / 1000).toFixed(1)}s`}</Text></View>
-      <View style={s.arena}><Text style={s.targetLabel}>PIGEON TARGET · PLACEHOLDER</Text><View testID="catch-lane" style={s.lane} onLayout={event => setLaneWidth(event.nativeEvent.layout.width)}>
-        <View style={s.track} />
-        <View testID="catch-net" style={s.net}><Text style={s.netLabel}>NET</Text></View>
-        <View testID="catch-target" accessibilityLabel="Pigeon center dot; tap when inside the net" style={[s.target, { left: laneWidth * frame.position - 16 }]}><View style={s.targetDot} /></View>
-      </View><Text style={s.small}>The center dot decides the hit.</Text></View>
-      <View style={s.rounds}>{frame.hits.map((hit, index) => <View key={index} style={[s.roundCell, hit === true && s.hit, hit === false && s.miss]}><Text style={s.small}>{index + 1}</Text><Text accessibilityLiveRegion="polite" style={s.hitText}>{hit === true ? 'Hit' : hit === false ? 'Miss' : index === frame.round && !frame.finished ? 'Ready' : '—'}</Text></View>)}</View>
-      <Action large label={state.abandoned ? 'Interrupted · waiting for expiry' : frame.finished ? 'Confirming result…' : !frame.canTap ? 'Tap recorded' : 'Catch'} disabled={!available || state.abandoned || !frame.canTap || state.phase !== 'playing'} onPress={() => session.tap()} />
-      <Text style={s.small}>Hit feedback is provisional. Only the server confirms a catch.</Text>
-      {state.abandoned && <Notice>This attempt cannot resume. Its 10-second lease will expire; we will retrieve the server result when connected.</Notice>}
-      {state.phase === 'resolve-error' && <Action label="Retry result confirmation" disabled={!available} onPress={() => void session.confirm()} />}
-    </View>}
-    {state.error ? <Notice error>{state.error}</Notice> : null}
-    {flightError ? <Notice error>{flightError}</Notice> : null}
-    {flightError && onRetryFlight && <Action label="Retry flight status" disabled={!connected} onPress={onRetryFlight} />}
-    {flight && <View style={s.event} accessibilityLiveRegion="polite"><Text style={s.tag}>LATEST FLIGHT STATUS{!connected ? ' · LAST KNOWN' : ''}</Text><Text style={s.body}>{flight.state === 'in_flight' ? 'In flight' : flight.state === 'intercepted' ? 'Intercepted' : 'Delivered'}{flight.events.at(-1) ? ` · ${flight.events.at(-1)!.label}` : ''}</Text></View>}
-    <Action secondary label={result ? 'Back to the map' : attempt || state.phase === 'reserving' || state.phase === 'reserve-error' ? 'Leave catch · attempt still counts' : 'Back to the map'} onPress={() => { session.setAvailable(false); onExit({ flightId, result }); }} />
-  </View></ScrollView></SafeAreaView>;
+  return <SafeAreaView style={styles.safe}><View testID="slingshot-viewport" style={styles.fill} onLayout={event => setSize(event.nativeEvent.layout)}>
+    <View style={{ position: 'absolute', left: transform.left, top: transform.top, width: SCENE.width * scale, height: SCENE.height * scale, overflow: 'hidden' }}>
+      <View testID="slingshot-scene" style={{ width: SCENE.width, height: SCENE.height, transform: [{ scale }], transformOrigin: 'top left', backgroundColor: '#FFFFFF' }}>
+        <View style={styles.sky} /><View style={styles.ground}><View style={styles.hillOne} /><View style={styles.hillTwo} /></View>
+        <View style={styles.header}><Button small label="×" accessibilityLabel="Leave encounter" onPress={onExit} /><Text style={styles.nav}>{label}</Text><View style={styles.pouch}><View style={styles.stoneIcon} /><Text style={styles.pouchCount}>{practice ? '∞' : count ?? '—'}</Text></View></View>
+        <View style={styles.meta}><Text style={styles.eyebrow}>{eyebrow}</Text><View style={styles.pips}>{Array.from({ length: limit }, (_, index) => <View key={index} style={[styles.pip, { opacity: index < remaining && !done ? 1 : 0.25 }]} />)}</View></View>
+        {!done && !empty && <>
+          <View style={styles.copy}><Text style={styles.title}>{shot ? 'There it goes.' : used ? 'A little wide.' : drag && armed ? 'Aim where it’s going.' : 'Pull back.\nAim ahead. Let go.'}</Text><Text style={styles.body}>{practice ? 'Free practice. No stones spent. No letters caught.' : shot ? 'Watch the arc.' : used ? 'Lead the pigeon and try your last shot.' : drag && armed ? 'Let the pigeon fly into your shot.' : 'One hit catches the letter.'}</Text></View>
+          <View testID="slingshot-target" style={[styles.target, { left: target.x - 29, top: target.y - 29 }]}><View style={styles.speedLine} /><View style={[styles.speedLine, { top: 37, width: 20, left: -27 }]} /></View>
+          <Line from={{ x: 145, y: 572 }} to={{ x: 195, y: 636 }} color={MUTED} width={14} /><Line from={{ x: 245, y: 572 }} to={{ x: 195, y: 636 }} color={MUTED} width={14} /><Line from={{ x: 195, y: 636 }} to={{ x: 195, y: 747 }} color={MUTED} width={16} />
+          <Line from={{ x: 145, y: 572 }} to={shot ? SCENE.fork : loaded} color={BLUE} width={3} /><Line from={{ x: 245, y: 572 }} to={shot ? SCENE.fork : loaded} color={BLUE} width={3} />
+          {direction && armed && !shot && Array.from({ length: 7 }, (_, index) => { const position = stoneAt(index * 32, direction); return <Dot key={index} point={position} size={3} color="#9CB0FF" />; })}
+          {shot && Array.from({ length: 12 }, (_, index) => { const position = stoneAt(Math.max(0, now - shot.releasedAt - index * 24), shot.direction); return <Dot key={index} point={position} size={2} color="#A9BBFF" />; })}
+          {inFlightPosition ? <Dot point={inFlightPosition} size={16} color={BLUE} testID="slingshot-projectile" /> : <Dot point={loaded} size={16} color={BLUE} testID="slingshot-stone" />}
+          <View style={styles.hint}><Text style={styles.hintTitle}>{shot ? '−1 stone' : drag && armed ? 'Let go.' : used ? 'One more.' : 'Drag the blue stone'}</Text><Text style={styles.hintBody}>{shot ? `${count ?? '—'} in your pouch` : drag && armed ? '1 stone when you fire\nReturn to the fork to cancel' : 'Pull back at least 32 pt\nStrength stays fixed'}</Text></View>
+          {!e?.armedAt && <Text style={styles.leaving}>{loading ? 'Checking the sky…' : e ? `Leaving your sky in 0:${String(Math.max(0, Math.ceil((e.readyUntil - now) / 1000))).padStart(2, '0')}` : 'Preparing your encounter…'}</Text>}
+        </>}
+        {caught && <><Text style={styles.bonk}>BONK.</Text><View style={styles.impact}>{Array.from({ length: 10 }, (_, index) => { const angle = index * Math.PI / 5; return <Line key={index} from={{ x: 120 + 52 * Math.cos(angle), y: 120 + 52 * Math.sin(angle) }} to={{ x: 120 + 100 * Math.cos(angle), y: 120 + 100 * Math.sin(angle) }} color={BLUE} width={2} />; })}<Dot point={{ x: 120, y: 120 }} size={58} color={BLUE} /><Text style={styles.envelope}>✉</Text></View><View style={styles.resultCopy}><Text style={styles.title}>{practice ? 'Nice practice shot.' : 'You caught it.'}</Text><Text style={styles.body}>{practice ? 'Same motion. Same collision. No letter or stone changed.' : 'An unexpected letter.\nAnd an unexpected introduction.'}</Text></View><View style={styles.bottom}><Button label={practice ? 'Practice again' : 'Open letter'} onPress={practice ? onPractice! : onOpenLetter!} /><Text style={styles.foot}>{practice ? 'Free every time.' : 'Server-confirmed catch · open your authorized letter'}</Text></View></>}
+        {done && !caught && <><View style={styles.escapeArt}>{[0, 1, 2].map(index => <Dot key={index} point={{ x: 170 + index * 40, y: 80 - index * 22 }} size={32 + index * 10} color={index === 2 ? BLUE : '#B3C3EB'} />)}</View><View style={[styles.resultCopy, { top: 414 }]}><Text style={styles.title}>{e?.state === 'delivered' ? 'That pigeon\nmade it home.' : 'That pigeon had\nplaces to be.'}</Text><Text style={styles.body}>{practice ? 'Practice over. Your pouch is unchanged.' : e?.state === 'abandoned' ? 'You left the encounter. Unfired stones cost nothing.' : e?.state === 'delivered' ? 'The intended recipient can read it. Arrival wins.' : `${used} shot${used === 1 ? '' : 's'}. No catch.\nThe letter stays private to its participants.`}</Text><Text style={[styles.body, { marginTop: 20 }]}>{!practice && `Your other ${count ?? '—'} stones are still in your pouch.`}</Text></View><View style={styles.bottom}><Button label={practice ? 'Practice again' : 'Back to sky'} onPress={practice ? onPractice! : onExit} /><Text style={styles.foot}>{practice ? 'No charge. No real pigeon.' : 'Another pigeon. Another chance.'}</Text></View></>}
+        {empty && <><View style={styles.copy}><Text style={styles.title}>Out of stones.{'\n'}Still in the game.</Text><Text style={styles.body}>Practice your aim while you refill.</Text></View><View style={styles.bag}><View style={styles.bagTop} /></View><View style={styles.refills}><View style={styles.refillRow}><View><Text style={styles.refillTitle}>Free refill</Text><Text style={styles.body}>Refills up to 3 stones</Text></View><Text style={styles.refillTime}>{nextRefillAt ? `+1 in ${duration(nextRefillAt - now)}` : 'Checking…'}</Text></View><Text style={[styles.body, { marginTop: 24 }]}>Your own pigeon brings +2 after a verified completed round trip. No return is scheduled by this screen.</Text></View><View style={styles.bottom}><Button label="Practice for free" onPress={onPractice!} /><Button secondary label="Get stones" onPress={() => setHelp(true)} /></View></>}
+        {help && <View style={styles.help}><Text style={styles.title}>Stones come home.</Text><Text style={styles.body}>Start with 6. Your shared pouch holds 12. Below 3, one stone refills every 20 minutes. A verified completed round trip grants 2, once.</Text><Text style={styles.body}>Stone packs are not available in V1. Practice is always free.</Text><Button label="Back to your pouch" onPress={() => setHelp(false)} /></View>}
+        {loading && <ActivityIndicator style={styles.loading} color={BLUE} />}
+        {busy && <Text style={styles.status}>Confirming with the server…</Text>}
+        {error && <View style={styles.error}><Text accessibilityRole="alert" style={styles.errorText}>{error}</Text>{onRetry && <Button secondary label="Retry confirmation" onPress={onRetry} />}</View>}
+        {reduced && !done && !empty && <Text style={styles.reduced}>Reduced motion · essential target motion stays on</Text>}
+      </View>
+      {!done && !empty && !help && e && <View testID="slingshot-grab" accessibilityLabel="Drag the blue stone away from the fork, then release to fire. Return to the fork to cancel." style={{ position: 'absolute', left: (SCENE.fork.x - 44) * scale, top: (SCENE.fork.y - 44) * scale, width: 88 * scale, height: 88 * scale }}
+        onStartShouldSetResponder={() => !busy && !shot}
+        onResponderGrant={event => { event.preventDefault(); const logical = { x: SCENE.fork.x - 44 + event.nativeEvent.locationX / scale, y: SCENE.fork.y - 44 + event.nativeEvent.locationY / scale }; if (onBegin(logical)) touch.current = { page: { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY }, logical }; }}
+        onResponderMove={event => { event.preventDefault(); if (touch.current) onMove(point(event)); }}
+        onResponderTerminationRequest={() => false}
+        onResponderRelease={event => { if (touch.current) { onMove(point(event)); onRelease(); touch.current = null; } }}
+        onResponderTerminate={() => { touch.current = null; onMove(SCENE.fork); onRelease(); }} />}
+    </View>
+  </View></SafeAreaView>;
 }
 
-function Notice({ children, error = false }: { children: React.ReactNode; error?: boolean }) {
-  return <Text accessibilityRole={error ? 'alert' : undefined} style={[s.notice, error && s.error]}>{children}</Text>;
+export function PracticeGame({ onExit }: { onExit: () => void }) {
+  const [round, setRound] = useState(0);
+  return <Practice key={round} onExit={onExit} restart={() => setRound(round + 1)} />;
 }
 
-function Action({ label, onPress, disabled = false, secondary = false, large = false }: { label: string; onPress: () => void; disabled?: boolean; secondary?: boolean; large?: boolean }) {
-  return <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [s.button, secondary && s.secondary, large && s.large, disabled && s.disabled, pressed && !disabled && s.pressed]}><Text style={[s.buttonText, secondary && s.secondaryText]}>{label}</Text></Pressable>;
+function Practice({ onExit, restart }: { onExit: () => void; restart: () => void }) {
+  const [e, setEncounter] = useState<Encounter>(() => ({ id: 'practice', flightId: '', version: GAME_VERSION, preparedAt: performance.now(), readyUntil: Infinity, seed: 0.8, armedAt: null, fireUntil: null, finishBy: null, shotLimit: 2, shots: [], state: 'ready', endedAt: null }));
+  const [now, setNow] = useState(performance.now());
+  const [drag, setDrag] = useState<Point | null>(null);
+  const dragRef = useRef<Point | null>(null);
+  const armed = useRef(false);
+  const current = useRef(e);
+  current.current = e;
+  function update(next: Encounter) { current.current = next; setEncounter(next); }
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      const now = performance.now(); setNow(now);
+      const value = current.current;
+      const shot = value.shots.find(shot => shot.outcome === 'flying');
+      if (shot && now >= shot.endsAt) {
+        const hit = traceShot(shot.releasedAt - value.preparedAt, shot.direction, value.seed).hit;
+        update({ ...value, shots: value.shots.map(item => item === shot ? { ...item, outcome: hit ? 'caught' : 'missed' } : item), state: hit ? 'caught' : value.shots.length === 2 || now >= value.fireUntil! ? 'escaped' : 'active' });
+      } else if (!shot && value.fireUntil && now >= value.fireUntil && !isFinished(value.state)) update({ ...value, state: 'escaped' });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    const listener = AppState.addEventListener('change', state => { if (state !== 'active') update({ ...current.current, state: 'abandoned' }); });
+    return () => { cancelAnimationFrame(raf); listener.remove(); };
+  }, []);
+  function move(point: Point) {
+    if (!dragRef.current) return;
+    const pull = { x: point.x - SCENE.fork.x, y: point.y - SCENE.fork.y };
+    dragRef.current = pull; setDrag(pull);
+    if (Math.hypot(pull.x, pull.y) >= 32) {
+      armed.current = true;
+      const value = current.current;
+      if (value.armedAt === null) { const now = performance.now(); update({ ...value, armedAt: now, fireUntil: now + PLAY_MS, finishBy: now + PLAY_MS + FLIGHT_MS, state: 'active' }); }
+    }
+  }
+  return <Scene practice encounter={e} now={now} count={null} nextRefillAt={null} drag={drag} armed={armed.current} onExit={onExit} onPractice={restart}
+    onBegin={() => { if (isFinished(e.state) || e.state === 'projectile') return false; dragRef.current = { x: 0, y: 0 }; setDrag(dragRef.current); armed.current = false; return true; }} onMove={move}
+    onRelease={() => { const pull = dragRef.current; dragRef.current = null; setDrag(null); const value = current.current; const at = performance.now(); if (!pull || !armed.current || Math.hypot(pull.x, pull.y) <= 24 || at >= value.fireUntil! || isFinished(value.state)) return; const direction = pullDirection(pull)!; const trace = traceShot(at - value.preparedAt, direction, value.seed); update({ ...value, state: 'projectile', shots: [...value.shots, { key: String(value.shots.length), direction, releasedAt: at, endsAt: at + trace.duration, outcome: 'flying' }] }); }} />;
 }
 
-const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#FFFFFF' },
-  scroll: { flexGrow: 1, padding: 24 },
-  page: { width: '100%', maxWidth: 480, alignSelf: 'center', gap: 20 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' },
-  brand: { color: '#2453FF', fontSize: 26, fontWeight: '800' },
-  tag: { color: '#475569', fontSize: 10, fontWeight: '700', letterSpacing: 1 },
-  stack: { gap: 14 },
-  title: { color: '#17212B', fontSize: 32, fontWeight: '700', lineHeight: 38 },
-  body: { color: '#475569', fontSize: 15, lineHeight: 22 },
-  small: { color: '#475569', fontSize: 12, lineHeight: 18 },
-  route: { borderLeftWidth: 3, borderLeftColor: '#2453FF', paddingLeft: 12, gap: 4 },
-  routeTitle: { color: '#17212B', fontSize: 17, fontWeight: '600' },
-  instructions: { backgroundColor: '#F3F6FC', padding: 20, borderRadius: 20, gap: 12 },
-  instructionTitle: { color: '#17212B', fontSize: 18, fontWeight: '600' },
-  notice: { color: '#34455A', fontSize: 13, lineHeight: 20, backgroundColor: '#F3F6FC', padding: 14, borderRadius: 12 },
-  error: { color: '#963B29', backgroundColor: '#FFF1ED' },
-  loading: { flexDirection: 'row', gap: 12, paddingVertical: 20 },
-  between: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
-  round: { color: '#17212B', fontSize: 12, fontWeight: '700', flexShrink: 1 },
-  timer: { color: '#2453FF', fontSize: 22, fontVariant: ['tabular-nums'], fontWeight: '600' },
-  arena: { borderRadius: 20, backgroundColor: '#F3F6FC', padding: 16, gap: 10 },
-  targetLabel: { color: '#475569', fontSize: 10, fontWeight: '600', letterSpacing: 1 },
-  lane: { height: 100 },
-  track: { position: 'absolute', left: 0, right: 0, top: 44, height: 2, backgroundColor: '#CED8EA' },
-  net: { position: 'absolute', left: '38%', width: '24%', top: 0, bottom: 0, backgroundColor: '#E0E9FF', borderWidth: 1, borderStyle: 'dashed', borderColor: '#2453FF', borderRadius: 12, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 8 },
-  netLabel: { color: '#2453FF', fontSize: 10, fontWeight: '700', letterSpacing: 1 },
-  target: { position: 'absolute', top: 29, width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: '#FFFFFF', backgroundColor: '#17212B', justifyContent: 'center', alignItems: 'center' },
-  targetDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#FFFFFF' },
-  rounds: { flexDirection: 'row', gap: 8 },
-  roundCell: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 12, backgroundColor: '#F3F6FC', gap: 2 },
-  hit: { backgroundColor: '#E5F3EA' },
-  miss: { backgroundColor: '#FFF1ED' },
-  hitText: { fontSize: 15, color: '#17212B', fontWeight: '600' },
-  button: { minHeight: 56, paddingHorizontal: 16, paddingVertical: 15, backgroundColor: '#2453FF', borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
-  large: { minHeight: 72 },
-  buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600', textAlign: 'center' },
-  secondary: { backgroundColor: '#F3F6FC' },
-  secondaryText: { color: '#2453FF' },
-  disabled: { opacity: 0.5 },
-  pressed: { opacity: 0.8 },
-  confirmed: { color: '#2453FF', fontSize: 12, fontWeight: '700', letterSpacing: 1 },
-  letter: { backgroundColor: '#F3F6FC', borderRadius: 20, padding: 20, gap: 16 },
-  letterBody: { fontSize: 20, lineHeight: 30, color: '#17212B' },
-  event: { borderTopWidth: 1, borderTopColor: '#E2E8F0', paddingTop: 16, gap: 6 },
+function Dot({ point, size, color, testID }: { point: Point; size: number; color: string; testID?: string }) { return <View testID={testID} pointerEvents="none" style={{ position: 'absolute', left: point.x - size / 2, top: point.y - size / 2, width: size, height: size, borderRadius: size / 2, backgroundColor: color }} />; }
+function Line({ from, to, color, width }: { from: Point; to: Point; color: string; width: number }) { const length = Math.hypot(to.x - from.x, to.y - from.y); return <View pointerEvents="none" style={{ position: 'absolute', left: from.x, top: from.y - width / 2, width: length, height: width, borderRadius: width, backgroundColor: color, transformOrigin: 'left center', transform: [{ rotate: `${Math.atan2(to.y - from.y, to.x - from.x)}rad` }] }} />; }
+function Button({ label, onPress, secondary, small, accessibilityLabel }: { label: string; onPress: () => void; secondary?: boolean; small?: boolean; accessibilityLabel?: string }) { return <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel ?? label} onPress={onPress} style={[styles.button, secondary && styles.secondary, small && styles.close]}><Text style={[styles.buttonText, (secondary || small) && { color: INK }]}>{label}</Text></Pressable>; }
+function duration(ms: number) { const seconds = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`; }
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#FFFFFF' }, fill: { flex: 1 },
+  sky: { position: 'absolute', left: 0, right: 0, top: 400, bottom: 0, backgroundColor: '#F3F8FB' },
+  ground: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 50, overflow: 'hidden', backgroundColor: '#EAF2F7' },
+  hillOne: { position: 'absolute', top: 26, left: -20, width: 250, height: 90, backgroundColor: '#DBE7EF', transform: [{ rotate: '-23deg' }] },
+  hillTwo: { position: 'absolute', top: 26, right: -30, width: 250, height: 90, backgroundColor: '#DBE7EF', transform: [{ rotate: '23deg' }] },
+  header: { position: 'absolute', left: 24, right: 24, top: 8, height: 44, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  nav: { fontSize: 20, fontWeight: '600', color: INK, fontVariant: ['tabular-nums'] },
+  pouch: { width: 66, height: 40, borderRadius: 20, backgroundColor: '#FFFFFF', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  pouchCount: { fontSize: 15, fontWeight: '600', color: INK }, stoneIcon: { width: 12, height: 12, borderRadius: 4, backgroundColor: BLUE, transform: [{ rotate: '20deg' }] },
+  meta: { position: 'absolute', left: 24, right: 24, top: 68, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  eyebrow: { fontSize: 11, letterSpacing: 0.7, fontWeight: '600', color: MUTED }, pips: { flexDirection: 'row', gap: 7 }, pip: { width: 9, height: 9, borderRadius: 5, backgroundColor: BLUE },
+  copy: { position: 'absolute', left: 28, right: 28, top: 126, gap: 12 }, title: { fontSize: 32, fontWeight: '700', letterSpacing: -1, lineHeight: 37, color: INK }, body: { fontSize: 14, lineHeight: 21, color: MUTED },
+  target: { position: 'absolute', width: 58, height: 58, borderRadius: 29, backgroundColor: BLUE }, speedLine: { position: 'absolute', left: -36, top: 25, width: 25, height: 2, backgroundColor: '#B2BCCB' },
+  hint: { position: 'absolute', left: 254, top: 640, width: 120, gap: 8 }, hintTitle: { fontSize: 17, fontWeight: '600', color: BLUE }, hintBody: { fontSize: 12, lineHeight: 18, color: MUTED },
+  leaving: { position: 'absolute', left: 28, top: 411, fontSize: 13, color: MUTED },
+  bonk: { position: 'absolute', left: 30, top: 112, color: BLUE, fontSize: 76, fontWeight: '900', letterSpacing: -3, transform: [{ rotate: '-8deg' }] },
+  impact: { position: 'absolute', left: 75, top: 220, width: 240, height: 240 }, envelope: { position: 'absolute', left: 150, top: 160, fontSize: 65, color: BLUE, transform: [{ rotate: '15deg' }] },
+  resultCopy: { position: 'absolute', left: 28, right: 28, top: 492, gap: 14 }, bottom: { position: 'absolute', left: 24, right: 24, bottom: 18, gap: 14 }, foot: { fontSize: 11, lineHeight: 16, color: MUTED, textAlign: 'center' },
+  escapeArt: { position: 'absolute', left: 0, top: 188, width: 390, height: 180 },
+  bag: { position: 'absolute', left: 140, top: 297, width: 110, height: 90, borderRadius: 36, borderColor: '#A1B0CC', borderWidth: 2, backgroundColor: '#EFF3FF' }, bagTop: { position: 'absolute', left: 23, top: -24, width: 62, height: 30, borderRadius: 12, borderColor: '#A1B0CC', borderWidth: 2, backgroundColor: '#EFF3FF' },
+  refills: { position: 'absolute', left: 28, right: 28, top: 440 }, refillRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 }, refillTitle: { fontSize: 15, fontWeight: '600', color: INK }, refillTime: { fontSize: 14, color: BLUE, fontWeight: '600' },
+  help: { position: 'absolute', left: 16, right: 16, top: 200, padding: 24, borderRadius: 24, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#DBE7EF', gap: 24 },
+  button: { minHeight: 56, padding: 15, borderRadius: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: BLUE }, buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' }, secondary: { backgroundColor: '#FFFFFF' }, close: { width: 44, minHeight: 44, padding: 0, backgroundColor: '#FFFFFF' },
+  loading: { position: 'absolute', left: 180, top: 450 }, status: { position: 'absolute', left: 28, top: 454, color: BLUE, fontSize: 12 }, error: { position: 'absolute', left: 20, right: 20, top: 400, padding: 12, borderRadius: 12, backgroundColor: '#FFF1ED', gap: 8 }, errorText: { color: '#963B29', fontSize: 12, lineHeight: 18 }, reduced: { position: 'absolute', left: 28, top: 480, fontSize: 10, color: MUTED },
 });

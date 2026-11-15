@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest, type TestConvex } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { isHit, type Attempt } from '../src/domain';
+import { traceShot } from '../starter/game/trajectory';
 import { api, internal } from './_generated/api';
 import schema from './schema';
 
@@ -24,12 +24,12 @@ async function room() {
   const launch = (overrides = {}) => a.client.mutation(api.starterRooms.launch, { recipientId: profiles[1].id, body: 'A real letter from A to B.', defense: 'cruise', openAcknowledged: true, requestKey: 'one', ...overrides });
   return { t, a, b, c, d, profiles, token, launch };
 }
-function taps(attempt: Attempt, hits = 3) {
-  return attempt.phases.map((phase, round) => {
-    if (round >= hits) return null;
-    for (let elapsed = 0; elapsed < 2000; elapsed++) if (isHit(elapsed, phase)) return round * 2000 + elapsed;
-    throw new Error('No hit window');
-  });
+function aim(seed: number) {
+  for (let x = -0.6; x < 0.6; x += 0.01) {
+    const direction = { x, y: -Math.sqrt(1 - x * x) };
+    if (traceShot(0, direction, seed).hit) return direction;
+  }
+  throw new Error('No hit trajectory');
 }
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-15T22:00:00Z')); });
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
@@ -109,11 +109,14 @@ describe('three actual authenticated actors in an isolated room', () => {
     expect((await c.client.query(api.flights.detail, { id })).flight).toMatchObject({ canCatch: true, role: 'public' });
     await expect(a.client.mutation(api.flights.reserve, { flightId: id })).rejects.toThrow('cannot be caught');
     await expect(b.client.mutation(api.flights.reserve, { flightId: id })).rejects.toThrow('cannot be caught');
-    const attempt = await c.client.mutation(api.flights.reserve, { flightId: id });
-    vi.setSystemTime(attempt.startedAt + 6000);
-    const result = await c.client.mutation(api.flights.resolve, { attemptId: attempt.id, taps: taps(attempt, 2) });
-    expect(result.outcome).toBe('caught');
-    expect(await c.client.mutation(api.flights.resolve, { attemptId: attempt.id, taps: [null, null, null] })).toEqual(result);
+    await expect(c.client.mutation(api.flights.reserve, { flightId: id })).rejects.toThrow('slingshot');
+    const encounter = (await c.client.mutation(api.slingshot.prepare, { flightId: id })).encounter!;
+    await c.client.mutation(api.slingshot.arm, { encounterId: encounter.id, armedElapsedMs: 0 });
+    const fired = await c.client.mutation(api.slingshot.fire, { encounterId: encounter.id, shotKey: 'first', releaseElapsedMs: 0, direction: aim(encounter.seed) });
+    vi.setSystemTime(fired.encounter!.shots[0].endsAt + 1);
+    const result = await c.client.mutation(api.slingshot.sync, { flightId: id });
+    expect(result.encounter?.state).toBe('caught');
+    expect((await c.client.mutation(api.slingshot.end, { encounterId: encounter.id })).encounter).toEqual(result.encounter);
     expect((await a.client.query(api.flights.detail, { id })).flight?.body).toBe('A real letter from A to B.');
     expect((await c.client.query(api.flights.detail, { id })).flight).toMatchObject({ role: 'catcher', body: 'A real letter from A to B.' });
     expect((await b.client.query(api.flights.detail, { id })).flight).toMatchObject({ state: 'intercepted', role: 'recipient' });
@@ -136,15 +139,16 @@ describe('three actual authenticated actors in an isolated room', () => {
     await expect(c.client.mutation(api.flights.reserve, { flightId: sealed.id })).rejects.toThrow('cannot be caught');
     await b.client.mutation(api.social.block, { profileId: profiles[2].id });
     expect((await c.client.query(api.flights.detail, { id })).flight?.canCatch).toBe(false);
-    await expect(c.client.mutation(api.flights.reserve, { flightId: id })).rejects.toThrow('cannot be caught');
+    await expect(c.client.mutation(api.slingshot.prepare, { flightId: id })).rejects.toThrow('cannot be intercepted');
   });
 
   it('expires abandoned attempts and delivers at the exact arrival boundary without body access for C', async () => {
     const { t, b, c, launch } = await room();
     const flight = await launch();
-    const attempt = await c.client.mutation(api.flights.reserve, { flightId: flight.id });
-    vi.setSystemTime(attempt.expiresAt);
-    expect((await c.client.mutation(api.flights.resolve, { attemptId: attempt.id, taps: taps(attempt) })).outcome).toBe('expired');
+    const encounter = (await c.client.mutation(api.slingshot.prepare, { flightId: flight.id })).encounter!;
+    await c.client.mutation(api.slingshot.arm, { encounterId: encounter.id, armedElapsedMs: 0 });
+    vi.setSystemTime(encounter.preparedAt + 10_000);
+    expect((await c.client.mutation(api.slingshot.sync, { flightId: flight.id })).encounter?.state).toBe('escaped');
     expect((await c.client.query(api.flights.detail, flight)).flight?.body).toBeUndefined();
     const detail = (await b.client.query(api.flights.detail, flight)).flight!;
     vi.setSystemTime(detail.arrivesAt);

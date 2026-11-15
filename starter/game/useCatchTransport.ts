@@ -4,10 +4,16 @@ import { api } from '../../convex/_generated/api';
 import type { CatchTransport } from './contract';
 
 export function useCatchTransport(): CatchTransport {
-  const reserve = useMutation(api.flights.reserve);
-  const resolve = useMutation(api.flights.resolve);
+  const sync = useMutation(api.slingshot.sync);
+  const prepare = useMutation(api.slingshot.prepare);
+  const arm = useMutation(api.slingshot.arm);
+  const fire = useMutation(api.slingshot.fire);
+  const end = useMutation(api.slingshot.end);
   return useMemo(() => ({
-    reserve: (flightId: string) => reserve({ flightId }),
-    resolve: (attemptId: string, taps: (number | null)[]) => resolve({ attemptId, taps }),
-  }), [reserve, resolve]);
+    sync: flightId => sync({ flightId }),
+    prepare: flightId => prepare({ flightId }),
+    arm: (encounterId, armedElapsedMs) => arm({ encounterId, armedElapsedMs }),
+    fire: (encounterId, shotKey, releaseElapsedMs, direction) => fire({ encounterId, shotKey, releaseElapsedMs, direction }),
+    end: encounterId => end({ encounterId }),
+  }), [sync, prepare, arm, fire, end]);
 }

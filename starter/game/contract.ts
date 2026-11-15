@@ -1,10 +1,17 @@
-import type { Attempt, AttemptResult, FlightDetail } from '../../src/domain';
+import type { FunctionReturnType } from 'convex/server';
+import type { api } from '../../convex/_generated/api';
+import type { FlightDetail } from '../../src/domain';
+import type { Point } from './trajectory';
 
-export type { Attempt, AttemptResult, FlightDetail };
-
+type ServerData = FunctionReturnType<typeof api.slingshot.sync>;
+export type Encounter = Omit<NonNullable<ServerData['encounter']>, 'id' | 'flightId'> & { id: string; flightId: string };
+export type GameData = Omit<ServerData, 'encounter'> & { encounter: Encounter | null };
 export type CatchTransport = {
-  reserve: (flightId: string) => Promise<Attempt>;
-  resolve: (attemptId: string, taps: (number | null)[]) => Promise<AttemptResult>;
+  sync: (flightId: string) => Promise<GameData>;
+  prepare: (flightId: string) => Promise<GameData>;
+  arm: (encounterId: string, armedElapsedMs: number) => Promise<GameData>;
+  fire: (encounterId: string, shotKey: string, releaseElapsedMs: number, direction: Point) => Promise<GameData>;
+  end: (encounterId: string) => Promise<GameData>;
 };
 
 export type CatchGameProps = {
@@ -12,8 +19,8 @@ export type CatchGameProps = {
   flight: FlightDetail | null | undefined;
   connected: boolean;
   transport: CatchTransport;
-  onExit: (event: { flightId: string; result: AttemptResult | null }) => void;
+  onExit: (event: { flightId: string; outcome: Encounter['state'] | null }) => void;
+  onOpenLetter: (event: { flightId: string }) => void;
   flightError?: string;
   onRetryFlight?: () => void;
-  onRequestConnection?: () => Promise<void>;
 };
