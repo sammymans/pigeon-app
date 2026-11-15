@@ -6,15 +6,17 @@ import { cityById, durationSeconds, formatDuration, OPEN_SKIES_DISCLOSURE, type 
 import { useServerClock } from './useServerClock';
 import { acceptedFriends, codepoints, exactTime, flightStatus, readableBody, routeEstimate, validDraft } from './letterModel';
 import { useDraft } from './useDraft';
-import { FlightMap } from './FlightMap';
 import { PaperPigeon } from './PaperPigeon';
 import { matchingFriends, visibleFlights } from './presentation';
 import { Button, Envelope, Field, Link, Loading, Notice, PostalCard, ScreenHeader, colors, s } from './ui';
+import { a, PageFrame, usePageInsets } from './page03/atoms';
+import { FlockSheet, HomeSheet, MapScreen } from './page03/MapScreen';
+import { skyMapData } from './page03/mapData';
 
 type Page = { screen: 'postbox' } | { screen: 'compose'; reply?: boolean } | { screen: 'detail'; id: string; sent?: boolean };
 type DraftController = ReturnType<typeof useDraft>;
 
-export function Mailbox({ profile, deployment, connected, onCatch, onReturn, onNavigate }: { profile: Profile; deployment: string; connected: boolean; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void; onNavigate: () => void }) {
+export function Mailbox({ profile, deployment, connected, onCatch, onReturn, onNavigate, onMenu }: { profile: Profile; deployment: string; connected: boolean; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void; onNavigate: () => void; onMenu?: () => void }) {
   const connections = useQuery(api.social.list, {});
   const flights = useQuery(api.flights.list, { scope: 'mine', demo: profile.demo });
   const pair = useQuery(api.starterPair.status, profile.demo ? {} : 'skip');
@@ -27,6 +29,9 @@ export function Mailbox({ profile, deployment, connected, onCatch, onReturn, onN
   const [tab, setTab] = useState<'recipient' | 'sender' | 'catcher'>('recipient');
   const [selected, setSelected] = useState<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<string | null>(null);
+  const [inbox, setInbox] = useState(false);
+  const [flock, setFlock] = useState(false);
+  const insets = usePageInsets();
   const world = useQuery(api.flights.list, scope === 'world' ? { scope: 'world', demo: profile.demo } : 'skip');
   const mapFlights = visibleFlights((scope === 'mine' ? flights : world)?.flights ?? [], scope);
   const selectedFlight = mapFlights.find((flight) => flight.id === selected) ?? mapFlights[0];
@@ -53,22 +58,14 @@ export function Mailbox({ profile, deployment, connected, onCatch, onReturn, onN
   const outgoing = flights?.flights.filter((flight) => flight.role === 'sender' && flight.state === 'in_flight').length ?? 0;
   const incoming = flights?.flights.filter((flight) => flight.role === 'recipient' && flight.state === 'in_flight').length ?? 0;
 
-  return <View style={s.stack}>
+  if (page.screen === 'postbox' && !inbox) return <MapScreen map={skyMapData(mapFlights, selectedFlight?.id ?? null, clock.serverNow)} scope={scope} onScope={(value) => { setScope(value); setSelected(null); setFlock(false); }} onMenu={onMenu} onInbox={() => setInbox(true)} onSelect={(id) => { setSelected(id); if (scope === 'mine') go({ screen: 'detail', id }); }}>
+    {flock ? <FlockSheet birds={[]} selected={null} summary="Not connected yet" onSelect={() => {}} onClose={() => setFlock(false)} onSend={() => { setFlock(false); go({ screen: 'compose' }); }} /> : scope === 'world' ? <View style={[a.sheet, { paddingBottom: insets.bottom + 12, gap: 12 }]}><WorldSelection id={selectedFlight?.id ?? null} connected={connected} onCatch={onCatch} /></View> : <HomeSheet title={flights === undefined ? 'Finding your flights…' : outgoing + incoming ? `${outgoing + incoming} ${outgoing + incoming === 1 ? 'flight' : 'flights'} in your sky` : 'Your sky is quiet'} subtitle={`${outgoing} sent · ${incoming} on its way to you`} ready="Your flock" onExpand={() => setFlock(true)} action={draft.locked ? 'Resolve saved send' : draft.draft?.body ? 'Continue your letter' : 'Send a pigeon'} onSend={() => { setReplyTarget(null); go({ screen: 'compose' }); }} disabled={connections === undefined} notice={!connected || clock.syncError ? <Text style={a.small}>Reconnecting. Status and sending wait for the server.</Text> : undefined} />}
+  </MapScreen>;
+
+  return <PageFrame scroll style={{ paddingTop: insets.top, paddingBottom: insets.bottom, paddingHorizontal: 24, gap: 20 }}>
     {clock.syncError && <Notice>The server clock or delivery refresh could not be confirmed. Status will update after reconnection; the countdown cannot unlock a letter.</Notice>}
     {page.screen === 'postbox' ? <>
-      <View style={s.between}><View accessibilityRole="tablist" style={[s.tabs, s.grow]}>{([['mine', 'My flights'], ['world', 'World']] as const).map(([value, label]) => <Pressable key={value} accessibilityRole="tab" aria-selected={scope === value} accessibilityState={{ selected: scope === value }} accessibilityLabel={label} onPress={() => { setScope(value); setSelected(null); }} style={[s.tab, scope === value && s.tabActive]}><Text style={[s.tabText, scope === value && s.tabActiveText]}>{label}</Text></Pressable>)}</View></View>
-      <View style={s.tight}><FlightMap flights={mapFlights} selected={selectedFlight?.id ?? null} serverNow={clock.serverNow} onSelect={setSelected} />
-        <View style={[s.dock, { marginTop: -20 }]}><View accessible={false} style={s.handle} />
-          {(scope === 'mine' ? flights : world) === undefined ? <Loading label="Finding flights in the sky…" /> : scope === 'world' ? <WorldSelection id={selectedFlight?.id ?? null} connected={connected} onCatch={onCatch} /> : <>
-            <View style={s.between}><Text accessibilityRole="header" style={s.subtitle}>Your sky</Text><Text style={s.badgeText}>{profile.demo ? 'Demo speed' : '60 km/h'}</Text></View>
-            <Text style={s.small}>{outgoing} sent · {incoming} on the way to you · {outgoing}/3 active sends</Text>
-            {selectedFlight && <Pressable accessibilityRole="button" accessibilityLabel="Open selected flight" onPress={() => go({ screen: 'detail', id: selectedFlight.id })} style={{ minHeight: 44, justifyContent: 'center', gap: 4 }}><Text style={s.body}>{selectedFlight.origin.name} → {selectedFlight.destination.name}</Text><Text style={s.badgeText}>{flightStatus(selectedFlight, clock.serverNow)} ↗</Text></Pressable>}
-            <Button label={draft.locked ? 'Resolve saved send →' : draft.draft?.body ? 'Continue your letter →' : 'Send a pigeon →'} disabled={connections === undefined || (friends.length === 0 && !draft.locked)} onPress={() => { setReplyTarget(null); go({ screen: 'compose' }); }} />
-          </>}
-        </View>
-      </View>
-      {scope === 'world' && <Text style={s.small}>Only Open Skies flights appear here. These are shared city routes, not anyone’s real location. Letter text and recipient identity stay off the map.</Text>}
-      {mapFlights.length > 1 && <View style={s.row}>{mapFlights.map((flight, index) => <Pressable key={flight.id} accessibilityRole="button" accessibilityLabel={`Select flight ${index + 1}: ${flight.origin.name} to ${flight.destination.name}`} aria-pressed={selectedFlight?.id === flight.id} accessibilityState={{ selected: selectedFlight?.id === flight.id }} onPress={() => setSelected(flight.id)} style={[s.recipientChip, selectedFlight?.id !== flight.id && { backgroundColor: '#F3F5F8' }]}><Text style={s.recipientName}>Flight {index + 1}</Text></Pressable>)}</View>}
+      <ScreenHeader title="Your postbox" onBack={() => setInbox(false)} />
       {scope === 'mine' && <>
         {connections !== undefined && friends.length === 0 && <Text style={s.small}>{profile.demo && pair ? 'Your partner will appear after accepting the invitation.' : 'No accepted friends yet. Only your existing accepted connections appear here.'}</Text>}
         {profile.demo && pair === undefined ? <Loading label="Checking your pair…" /> : pair && !pair.partner ? <Invitation token={pair.inviteToken} expiresAt={pair.expiresAt} serverNow={clock.serverNow} /> : pair?.partner ? <Text style={s.small}>@{profile.handle} · {cityById(profile.cityId).name}{'\n'}Paired with @{pair.partner.handle} · {cityById(pair.partner.cityId).name}</Text> : null}
@@ -81,7 +78,7 @@ export function Mailbox({ profile, deployment, connected, onCatch, onReturn, onN
       <ScreenHeader title={page.sent ? 'On its way' : 'Your letter'} disabled={draft.busy} onBack={() => go({ screen: 'postbox' })} />
       <LetterDetail id={page.id} serverNow={clock.serverNow} justSent={Boolean(page.sent)} onReply={reply} onReturn={onReturn} onHome={() => go({ screen: 'postbox' })} />
     </>}
-  </View>;
+  </PageFrame>;
 }
 
 function WorldSelection({ id, connected, onCatch }: { id: string | null; connected: boolean; onCatch?: (flightId: string) => void }) {

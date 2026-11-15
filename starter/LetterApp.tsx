@@ -9,6 +9,7 @@ import type { CityId } from '../src/domain';
 import { Mailbox } from './Mailbox';
 import { Button, CityPicker, Field, Link, Loading, Notice, Wordmark, s } from './ui';
 import { PaperPigeon } from './PaperPigeon';
+import { LandingScreen } from './page03/LandingScreen';
 
 type SetupMode = 'create' | 'join' | 'account';
 
@@ -24,6 +25,8 @@ export function LetterApp({ deployment, onCatch, onReturn }: { deployment: strin
   const [diagnostic, setDiagnostic] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState('');
+  const [entering, setEntering] = useState(false);
+  const [settings, setSettings] = useState(false);
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const connected = connection.isWebSocketConnected;
 
@@ -35,11 +38,16 @@ export function LetterApp({ deployment, onCatch, onReturn }: { deployment: strin
     finally { setSigningOut(false); }
   }
 
+  if (!isAuthenticated && !entering) return <LandingScreen onStart={() => setEntering(true)} />;
+  if (isAuthenticated && !diagnostic && !settings) return <View style={{ flex: 1, backgroundColor: 'white' }}><QueryBoundary><SignedIn deployment={deployment} mode={mode} setMode={setMode} connected={connected} onCatch={onCatch} onReturn={onReturn} onNavigate={() => {}} onMenu={() => setSettings(true)} /></QueryBoundary></View>;
+
   return <SafeAreaView style={s.safe}><KeyboardAvoidingView style={s.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={s.scroll}><View style={s.page}>
     <View style={s.header}><View style={s.grow}><Wordmark /></View><View style={s.row}><View style={[s.dot, !connected && s.disconnected]} /><Text accessibilityLiveRegion="polite" style={s.small}>{connected ? 'Connected' : 'Offline'}</Text></View></View>
+    <Link label="Back to my flights" onPress={() => { setEntering(false); setSettings(false); setDiagnostic(false); }} />
     {!connected && <Notice>The post office is reconnecting. Saved drafts stay on this device; delivery waits for the server.</Notice>}
     {diagnostic && <QueryBoundary><Diagnostic connected={connected} /></QueryBoundary>}
-    <View style={diagnostic ? { display: 'none' } : { flexGrow: 1 }}>{isLoading ? <Loading label="Restoring your sign-in…" /> : <QueryBoundary key={isAuthenticated ? 'signed-in' : 'signed-out'}>{isAuthenticated ? <SignedIn deployment={deployment} mode={mode} setMode={setMode} connected={connected} onCatch={onCatch} onReturn={onReturn} onNavigate={() => scroll.current?.scrollTo({ y: 0, animated: false })} /> : <Welcome mode={mode} setMode={setMode} connected={connected} />}</QueryBoundary>}</View>
+    {!diagnostic && !settings && <View style={{ flexGrow: 1 }}>{isLoading ? <Loading label="Restoring your sign-in…" /> : <QueryBoundary><Welcome mode={mode} setMode={setMode} connected={connected} /></QueryBoundary>}</View>}
+    {settings && !diagnostic && <Text style={s.subtitle}>Your account</Text>}
     {error ? <Notice error>{error}</Notice> : null}
     <View style={s.divider} />
     <View style={s.between}><Link label={diagnostic ? '← Back to letters' : 'Connection diagnostic'} onPress={() => setDiagnostic(!diagnostic)} />{isAuthenticated && <Link label={signingOut ? 'Signing out…' : 'Sign out'} disabled={signingOut || !connected} onPress={() => void leave()} />}</View>
@@ -83,11 +91,11 @@ function ModeTabs({ mode, setMode, disabled }: { mode: SetupMode; setMode: (mode
   return <View accessibilityRole="tablist" style={s.tabs}>{([['create', 'Create pair'], ['join', 'Join pair'], ['account', 'Sign in']] as const).map(([value, label]) => <Pressable key={value} accessibilityRole="tab" accessibilityLabel={label} aria-selected={mode === value} accessibilityState={{ selected: mode === value, disabled }} disabled={disabled} style={[s.tab, mode === value && s.tabActive]} onPress={() => setMode(value)}><Text style={[s.tabText, mode === value && s.tabActiveText]}>{label}</Text></Pressable>)}</View>;
 }
 
-function SignedIn({ deployment, mode, setMode, connected, onCatch, onReturn, onNavigate }: { deployment: string; mode: SetupMode; setMode: (mode: SetupMode) => void; connected: boolean; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void; onNavigate: () => void }) {
+function SignedIn({ deployment, mode, setMode, connected, onCatch, onReturn, onNavigate, onMenu }: { deployment: string; mode: SetupMode; setMode: (mode: SetupMode) => void; connected: boolean; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void; onNavigate: () => void; onMenu?: () => void }) {
   const profile = useQuery(api.profiles.me, {});
   if (profile === undefined) return <Loading label="Finding your nest…" />;
-  if (profile === null) return <ProfileSetup mode={mode} setMode={setMode} connected={connected} />;
-  return <Mailbox key={profile.id} profile={profile} deployment={deployment} connected={connected} onCatch={onCatch} onReturn={onReturn} onNavigate={onNavigate} />;
+  if (profile === null) return <SafeAreaView style={s.safe}><ScrollView contentContainerStyle={s.scroll}><View style={s.page}><Link label="Back to account" onPress={() => onMenu?.()} /><ProfileSetup mode={mode} setMode={setMode} connected={connected} /></View></ScrollView></SafeAreaView>;
+  return <Mailbox key={profile.id} profile={profile} deployment={deployment} connected={connected} onCatch={onCatch} onReturn={onReturn} onNavigate={onNavigate} onMenu={onMenu} />;
 }
 
 function ProfileSetup({ mode, setMode, connected }: { mode: SetupMode; setMode: (mode: SetupMode) => void; connected: boolean }) {
