@@ -1,5 +1,7 @@
 # First letter preview handoff
 
+> Archived pre-deployment handoff from the original full-source workspace. Statements below about unpublished/uncommitted source and deployment permission describe that earlier checkpoint. Use the current root README and `docs/backend-retention.md` for this projection's source and deployment state.
+
 This is the next narrow checkpoint after the shared-counter starter, not a restart of the older full product. It has not been deployed to the shared cloud Convex deployment and has no published preview. The counter preview remains owned by YCCM-2. Obtain Captain's explicit handoff before these deployment steps.
 
 Captain subsequently supplied Paper roughv1 to YCCM-11 for a separate read-only design analysis. Its possible changes to interception, flock capacity, 80 km/h, 500 characters, nearby/SMS invites and same-courier replies are not approved behavior changes. This handoff deliberately retains Sealed default, 280 codepoints, the existing 60 km/h normal formula and a new timed flight per reply. Resolve the design delta with Captain before changing that contract; no Paper assets or new gameplay were implemented here.

@@ -1,12 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { cityById, type Connection, type FlightDetail, type Profile } from '../src/domain';
-import { acceptedFriends, codepoints, draftStorageKey, editDraft, emptyDraft, flightStatus, readableBody, replyDraft, restoreDraft, routeEstimate, sealDraft, validDraft } from './letterModel';
+import { acceptedFriends, codepoints, draftStorageKey, editDraft, emptyDraft, flightStatus, readableBody, releaseRejectedDraft, replyDraft, restoreDraft, routeEstimate, sealDraft, validDraft } from './letterModel';
 
 const sender: Profile = { id: 'a', handle: 'alice', cityId: 'san-francisco', demo: true, equipped: 'classic' };
 const recipient: Profile = { ...sender, id: 'b', handle: 'bob', cityId: 'los-angeles' };
 const flight: FlightDetail = { id: 'flight', courier: 'Pip', origin: cityById(sender.cityId), destination: cityById(recipient.cityId), visibility: 'sealed', defense: 'cruise', distanceKm: 559, departedAt: 1000, arrivesAt: 31000, state: 'in_flight', outfit: 'classic', demo: true, role: 'recipient', attemptCount: 0, canCatch: false, canRequest: false, canResend: false, events: [], otherProfileId: sender.id };
 
 describe('sealed drafts', () => {
+  it('allows editing after a fresh definitive rejection but preserves every uncertain retry', () => {
+    const pending = sealDraft({ ...emptyDraft('b'), body: 'keep this text' }, true, 'rejected');
+    const editable = releaseRejectedDraft(pending, true);
+    expect(editable).toEqual({ ...pending, pending: null });
+    expect(restoreDraft(JSON.stringify(editable), true)).toEqual(editable);
+    expect(editDraft(editable, { recipientId: 'c' }).recipientId).toBe('c');
+    expect(sealDraft(editable, true, 'new-key').pending?.requestKey).toBe('new-key');
+    expect(releaseRejectedDraft(pending, false)).toBe(pending);
+    expect(releaseRejectedDraft(restoreDraft(JSON.stringify(pending), true), false).pending).toEqual(pending.pending);
+  });
+
   it('counts codepoints rather than UTF-16 code units', () => {
     expect(codepoints('🐦'.repeat(280))).toBe(280);
     expect(validDraft({ ...emptyDraft('b'), body: '🐦'.repeat(280) })).toBe(true);

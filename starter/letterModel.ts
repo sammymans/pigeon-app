@@ -38,6 +38,10 @@ export function editDraft(draft: Draft, changes: Partial<Pick<Draft, 'body' | 'r
   return { ...draft, ...changes };
 }
 
+export function releaseRejectedDraft(draft: Draft, freshLaunch: boolean): Draft {
+  return freshLaunch ? { ...draft, pending: null } : draft;
+}
+
 export function replyDraft(draft: Draft, recipientId: string): Draft {
   if (draft.pending) throw new Error('Confirm the existing send before starting a reply.');
   return emptyDraft(recipientId);
