@@ -1,30 +1,21 @@
-# Backend retention and source boundary
+# Retained backend and source provenance
 
-## Current cloud state
+The foundation PR deliberately included only a counter schema, so it was unsafe to deploy over the existing shared backend. This follow-up restores the complete retained backend and shared `src/domain.ts` from original commit `6f18957645086ba8062f028cbc801ee3fbac21ab`, without importing the old product frontend, assets, Rive runtime, or native product dependencies.
 
-The frontend uses development deployment `helpful-kudu-864`. The prior full backend was deployed before the scope narrowed, and the starter table/functions were added to it. Its auth, profiles, flights, messages, social, catch, and commerce schema/functions remain there to preserve existing data and behavior. Their presence is not approval to resume those product features.
+The restored auth, profiles, flight engine, social, demo, catch, commerce, HTTP endpoints, schema and tests preserve what was already deployed to development `helpful-kudu-864`. Catch/commerce code is retained to avoid removing live functions or invalidating existing data; it is not a newly authorized feature and is not exposed by the first-letter frontend. The backend's Whop dependency is for those retained functions, not the Expo bundle.
 
-This PR versions only `starterDemo.ts`, its unchanged regression test, the minimal `starterDemo` schema, and supporting types/test tooling. Generated server environment types omit the old product variables because this projection does not use them. The frontend intentionally uses narrow function references rather than importing the archived product API.
+The first-letter delta adds the `starterPairs` table and four pairing functions, an optional `flights.openAcknowledged` field for complete retry comparison, and shared handle normalization. It does not change normal travel speed, flight limits, privacy mode, auth providers, or commerce behavior. See [first-letter-backend.md](first-letter-backend.md) for the actual additions.
 
-**The source tree is not the complete live backend. Deploying it to the shared deployment could remove functions and schema definitions. Do not run `convex dev`, `convex deploy`, or credentialed codegen against that deployment from this tree.** No deployment credentials, automatic deployment workflow, or backend startup command are included.
+## Safe development deployment
 
-The counter is intentionally unauthenticated and public. Its API has no caller-selected row/table or namespace; it reads and increments the one `shared` demo row and wraps at one million. It is not a private-data or production-auth pattern.
+Only the integration owner deploys. Confirm the securely provided deployment key targets exactly `dev:helpful-kudu-864`; never log its value, fall back to another target, or use `--prod`/preview recreation. Reconcile the complete source with any changes made since the last verified deployment. Run tests/typechecks, inspect `npx convex deploy --dry-run --typecheck enable`, and stop if existing tables, functions, or indexes would be removed. Only then use `npx convex deploy --typecheck enable` with the verified development key. Do not change the existing Convex Auth environment variables.
 
-## Before any future shared-backend deployment
-
-Restore the full retained backend into an isolated worktree, reconcile it with the actual current deployment and any intervening changes, then add only the approved module/schema changes. Verify the target is the intended development deployment and review the deployment diff before applying it. Preserve all existing tables/functions and data. Do not deploy the older archived frontend or resume catch/commerce as a side effect.
-
-Tests in this minimal projection run entirely in memory. They do not establish compatibility of a future full-backend deploy. That needs the full backend's tests and a separate authorized handoff.
+The coordinated first-letter deployment from source `949016f` was dry-run and deployed additively. All 47 prior function/HTTP identifiers remained, four pairing functions were added, and only three new pairing indexes were introduced. Auth discovery and the public counter were rechecked. This PR projects the same runtime files; future drift still requires a fresh comparison, not blind redeployment.
 
 ## Retained history
 
-The Captain's source handoff `captain-fapy/handoffs/YCCM-2-starter.bundle` contains the complete original history, with original commit identities intact:
+Original history remains unmodified in `captain-fapy/handoffs/YCCM-2-starter.bundle`, also provided as `handoffs/YCCM-7/base.bundle`: `759866c` (empty ancestor) → `31c2097` (foundation) → `06ebf3c` (archived full product) → `6f18957` (counter).
 
-| Commit | Scope |
-| --- | --- |
-| `759866ca1e135554111abf794d3a8fd42bcd7438` | Original empty base, now published to `main`. |
-| `31c2097` | Original Expo/Convex tooling foundation. |
-| `06ebf3c` | Archived full product and retained cloud backend source. |
-| `6f18957645086ba8062f028cbc801ee3fbac21ab` | Isolated counter frontend and additive counter backend. |
+The 26-file first-letter handoff patch was applied to that full history and committed under the verified current author as `949016f78d20ec17afd7e02b5727d0638596d509`, pushed to `capy/first-letters-preview`. That source branch preserves historical authorship and hosts the separate live preview; it is not the intended main-targeting PR. This clean follow-up projects only retained backend/shared domain and the approved first-letter frontend onto the reviewed foundation, with no old full-product UI dump.
 
-The original bundle is the recovery source, not this minimal branch. Verify it with `git bundle verify /path/to/YCCM-2-starter.bundle`, fetch its `refs/heads/capy/convex-starter` into a new local archive branch, and inspect before restoring. Do not overwrite current work or deploy the archived snapshot blindly. No old authored commit was re-authored as Sammy.
+No credentials, account caches, pairing invitations, auth keys, databases, or runtime state belong in source or handoffs. The old counter remains independently hosted; do not overwrite its process or QR when handing off the first-letter preview.
