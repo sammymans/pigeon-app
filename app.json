@@ -1,10 +1,21 @@
 {
   "expo": {
-    "name": "YCCMH",
-    "slug": "yccmh",
+    "name": "Pigeon",
+    "slug": "pigeon",
+    "scheme": "pigeon",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "ios": { "supportsTablet": true, "bundleIdentifier": "com.sammymans.yccmh" }
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sammymans.pigeon"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      ["expo-build-properties", { "ios": { "deploymentTarget": "16.4" } }]
+    ],
+    "web": { "bundler": "metro", "output": "single", "name": "Pigeon — a message becomes a journey", "favicon": "./assets/favicon.png" },
+    "experiments": { "typedRoutes": true }
   }
 }

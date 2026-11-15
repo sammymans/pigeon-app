@@ -4,3 +4,5 @@
 .claude
 .revyl
 convex/.local
+.convex
+dist
