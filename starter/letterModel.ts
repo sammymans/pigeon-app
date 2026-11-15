@@ -54,6 +54,10 @@ export function acknowledgeOpenSkies(draft: Draft, acknowledged: boolean): Draft
   return { ...draft, openAcknowledged: acknowledged };
 }
 
+export function releaseRejectedDraft(draft: Draft, freshLaunch: boolean): Draft {
+  return freshLaunch ? { ...draft, pending: null, openAcknowledged: false } : draft;
+}
+
 export function replyDraft(draft: Draft, recipientId: string): Draft {
   if (draft.pending) throw new Error('Confirm the existing send before starting a reply.');
   return emptyDraft(recipientId);

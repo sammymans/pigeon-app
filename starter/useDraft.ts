@@ -3,7 +3,7 @@ import { ConvexError } from 'convex/values';
 import { randomUUID } from 'expo-crypto';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LaunchInput } from '../src/domain';
-import { acknowledgeOpenSkies as acknowledgeDraft, convertLegacyToOpenSkies as convertDraft, draftStorageKey, editDraft, emptyDraft, replyDraft, restoreDraft, sealDraft, type Draft } from './letterModel';
+import { acknowledgeOpenSkies as acknowledgeDraft, convertLegacyToOpenSkies as convertDraft, draftStorageKey, editDraft, emptyDraft, releaseRejectedDraft, replyDraft, restoreDraft, sealDraft, type Draft } from './letterModel';
 
 export function useDraft(deployment: string, profileId: string, demo: boolean) {
   const key = draftStorageKey(deployment, profileId);
@@ -81,6 +81,7 @@ export function useDraft(deployment: string, profileId: string, demo: boolean) {
 
   async function send(launch: (input: LaunchInput) => Promise<{ id: string }>): Promise<string | null> {
     if (!current.current || sending.current) return null;
+    const freshLaunch = !current.current.pending;
     sending.current = true;
     setBusy(true);
     setError('');
@@ -107,7 +108,16 @@ export function useDraft(deployment: string, profileId: string, demo: boolean) {
       if (stage === 'prepare') setError(cause instanceof Error ? cause.message : 'This draft is not ready to send.');
       else if (stage === 'cleanup') setError('The server accepted your letter. Local draft cleanup failed; finish cleanup before writing another.');
       else if (stage === 'persist') setError('The prepared draft could not be saved. No new send was attempted. Retry safely with the same letter.');
-      else if (cause instanceof ConvexError && typeof cause.data === 'string') setError(`${cause.data} Your exact letter is kept for the same retry.`);
+      else if (cause instanceof ConvexError && typeof cause.data === 'string') {
+        if (freshLaunch && current.current) {
+          try {
+            await persist(releaseRejectedDraft(current.current, true));
+            setError(`${cause.data} No flight was created. Your text is kept; you can edit it and acknowledge Open Skies again.`);
+          } catch {
+            setError(`${cause.data} No flight was created, but the editable draft could not be saved. Retry saving before leaving.`);
+          }
+        } else setError(`${cause.data} A previous send is still uncertain. Your exact payload and key are kept for retry.`);
+      }
       else setError('Send confirmation did not arrive. This letter may already be flying. Retry the same saved letter to confirm, without sending a duplicate.');
       return null;
     } finally {

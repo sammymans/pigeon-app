@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cityById, type Connection, type FlightDetail, type Profile } from '../src/domain';
-import { acceptedFriends, acknowledgeOpenSkies, codepoints, convertLegacyToOpenSkies, draftStorageKey, editDraft, emptyDraft, flightStatus, readableBody, replyDraft, restoreDraft, routeEstimate, sealDraft, validDraft } from './letterModel';
+import { acceptedFriends, acknowledgeOpenSkies, codepoints, convertLegacyToOpenSkies, draftStorageKey, editDraft, emptyDraft, flightStatus, readableBody, releaseRejectedDraft, replyDraft, restoreDraft, routeEstimate, sealDraft, validDraft } from './letterModel';
 
 const sender: Profile = { id: 'a', handle: 'alice', cityId: 'san-francisco', demo: true, equipped: 'classic' };
 const recipient: Profile = { ...sender, id: 'b', handle: 'bob', cityId: 'los-angeles' };
@@ -45,6 +45,19 @@ describe('sealed drafts', () => {
 });
 
 describe('Open Skies draft migration and consent', () => {
+  it('releases only a fresh authoritatively rejected launch, preserving text and resetting consent', () => {
+    const draft = sealDraft(acknowledgeOpenSkies(editDraft(emptyDraft('b'), { body: 'keep these words' }), true), true, 'rejected');
+    const editable = releaseRejectedDraft(draft, true);
+    expect(editable).toMatchObject({ body: draft.body, recipientId: 'b', pending: null, openAcknowledged: false });
+    expect(restoreDraft(JSON.stringify(editable), true)).toEqual(editable);
+    expect(editDraft(editable, { recipientId: 'c' }).recipientId).toBe('c');
+    expect(() => sealDraft(editable, true, 'fresh-key')).toThrow(/Acknowledge/);
+    expect(sealDraft(acknowledgeOpenSkies(editable, true), true, 'fresh-key').pending?.requestKey).toBe('fresh-key');
+    expect(releaseRejectedDraft(draft, false)).toBe(draft);
+    const legacy = restoreDraft(JSON.stringify(legacySend('uncertain legacy')), true);
+    expect(releaseRejectedDraft(legacy, false).pending).toEqual(legacy.pending);
+  });
+
   it('starts new letters and replies open without silently acknowledging the risk', () => {
     const draft = editDraft(emptyDraft('b'), { body: 'hello' });
     expect(draft.visibility).toBe('open');
