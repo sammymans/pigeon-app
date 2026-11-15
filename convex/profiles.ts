@@ -1,7 +1,7 @@
 import { getAuthUserId } from '@convex-dev/auth/server';
 import { ConvexError, v } from 'convex/values';
 import { mutation, query } from './_generated/server';
-import { optionalProfile, profileProjection, requireProfile } from './model';
+import { normalizeHandle, optionalProfile, profileProjection, requireProfile } from './model';
 import { cityId, profileDto } from './validators';
 
 export const me = query({
@@ -18,8 +18,7 @@ export const save = mutation({
     const userId = await getAuthUserId(ctx);
     const user = userId ? await ctx.db.get('users', userId) : null;
     if (!userId || !user) throw new ConvexError('Sign in first.');
-    const handle = args.handle.trim().replace(/^@/, '').toLowerCase();
-    if (!/^[a-z0-9_]{3,24}$/.test(handle)) throw new ConvexError('Use 3–24 lowercase letters, numbers, or underscores.');
+    const handle = normalizeHandle(args.handle);
     const existing = await ctx.db.query('profiles').withIndex('by_userId', (q) => q.eq('userId', userId)).unique();
     if (user.isAnonymous && !existing) throw new ConvexError('Start your isolated demo before choosing a profile.');
     const taken = await ctx.db.query('profiles').withIndex('by_handle', (q) => q.eq('handle', handle)).unique();

@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { ConvexClient } from 'convex/browser';
 import { makeFunctionReference } from 'convex/server';
 
-const url = 'https://helpful-kudu-864.convex.cloud';
+const url = process.env.EXPO_PUBLIC_CONVEX_URL;
+if (!url) throw new Error('Set EXPO_PUBLIC_CONVEX_URL explicitly to the approved isolated backend. No counter update was attempted.');
 const read = makeFunctionReference('starterDemo:read');
 const increment = makeFunctionReference('starterDemo:increment');
 const a = new ConvexClient(url);

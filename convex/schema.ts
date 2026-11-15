@@ -6,6 +6,10 @@ import { city, cityId, connectionState, defense, event, flightState, outcome, ou
 
 export default defineSchema({
   starterDemo: defineTable({ key: v.literal('shared'), value: v.number() }).index('by_key', ['key']),
+  starterPairs: defineTable({
+    ownerId: v.id('profiles'), partnerId: v.optional(v.id('profiles')), namespace: v.string(),
+    inviteToken: v.string(), expiresAt: v.number(), inviteOpen: v.boolean(),
+  }).index('by_ownerId', ['ownerId']).index('by_partnerId', ['partnerId']).index('by_inviteToken', ['inviteToken']),
   ...authTables,
   ...commerceTables,
   profiles: defineTable({
@@ -15,7 +19,7 @@ export default defineSchema({
   flights: defineTable({
     senderId: v.id('profiles'), recipientId: v.id('profiles'), origin: city, destination: city,
     visibility, defense, distanceKm: v.number(), departedAt: v.number(), arrivesAt: v.number(),
-    state: flightState, demo: v.boolean(), namespace: v.string(), requestKey: v.string(),
+    state: flightState, demo: v.boolean(), namespace: v.string(), requestKey: v.string(), openAcknowledged: v.optional(v.boolean()),
     courier: v.string(), shareToken: v.optional(v.string()), attemptCount: v.number(), catchOpen: v.boolean(),
     catcherId: v.optional(v.id('profiles')), activeAttemptId: v.optional(v.id('catchAttempts')),
     updatedAt: v.number(), events: v.array(event),

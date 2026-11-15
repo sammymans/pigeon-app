@@ -1,21 +1,28 @@
-# Expo + Convex starter
+# First-letter Expo starter
 
-One screen, one shared public demo counter. No product routes, login, Rive, payments, or custom native modules are loaded by this frontend.
+A phone-sized, Expo Go-compatible frontend for the first sealed-letter slice. It loads no old product routes, Rive, commerce, catching, or custom native modules. `docs/first-letter-contract.md` defines the integration contract.
 
-## Run in the cloud
+## Configuration and verification
 
-From this folder: `npm ci`, `npm run typecheck`, then `npx expo start --go --host lan --port 8081`. For an HTTPS reverse proxy, set `EXPO_PACKAGER_PROXY_URL` to that proxy's public origin before starting Metro. Confirm the iOS manifest's launch asset also uses that HTTPS origin. The preview service must stay running while the phone uses it.
+Set `EXPO_PUBLIC_CONVEX_URL` explicitly to the approved isolated Convex backend before starting or exporting Expo. There is no default live target. Missing configuration shows a setup screen and performs no account or letter operations. Do not repoint or publish over the existing counter preview.
 
-Expo SDK 58 requires compatible Expo Go. On physical iOS, the CLI and Expo Go must use the same Expo account: supply `EXPO_TOKEN` securely in the cloud and verify `npx expo whoami` before claiming phone readiness. Never commit the token. Scan the public `exps://` URL's QR, open on two clients, and tap **Increment +1**. Actual phone execution requires confirmation on the device; bundle export alone does not prove it.
+From the repository root, run `npm --prefix starter run typecheck` and `node_modules/.bin/vitest run --config starter/vitest.config.ts`. Only the integration owner installs dependencies, generates API bindings, runs backend/server commands, or starts previews. The local backend needs the existing Convex Auth setup and the additive `starterPair` APIs.
 
-`node check-sync.mjs` independently connects two cloud clients, changes the counter once, and asserts the subscription receives the change.
+`EXPO_PUBLIC_CONVEX_URL=<approved-isolated-target> node starter/check-sync.mjs` subscribes as two independent public counter clients and increments once. It refuses to run without an explicit target. This is a write check, not a private-letter or authentication check.
 
-## Backend isolation
+## Two-person flow
 
-Public endpoint: `https://helpful-kudu-864.convex.cloud` (development).
+1. On one device or browser profile, choose **Create pair**, start the anonymous session, and choose a handle and home city.
+2. Reveal the private, expiring invitation only to share it with your partner. Hide it before screenshots or recordings. On a separate device/browser profile, the partner chooses **Join pair** and accepts that invitation. Browser tabs sharing local storage are not independent identities.
+3. Choose the accepted friend and write up to 280 Unicode codepoints. Demo accounts always use labeled 30–90-second travel, alongside the normal city-distance travel estimate. Existing Password accounts use normal time and their existing accepted friends.
+4. Send. The returned flight subscription supplies the exact route, departure, ETA, and state. Incoming letters never include body text in lists. The detail view shows text only after the server returns `delivered` and a body. Replies start blank and launch a new timed flight.
 
-The frontend references only `starterDemo:read` and `starterDemo:increment`. Backend additions are `convex/starterDemo.ts`, its test, and the `starterDemo` table/index in `convex/schema.ts`. They access exactly one public demo row; its number wraps at one million, and callers cannot choose a table, record, or namespace. No private app records are exposed.
+## Persistence and recovery
 
-This reuses a development deployment containing the prior product. The complete existing schema/functions stay in the repository and deployment to preserve them and their data. They are not part of this frontend. Do not deploy a reduced schema or delete existing functions to simplify this demo.
+Native auth tokens use Expo SecureStore; web uses Convex Auth’s namespaced local storage. Anonymous access belongs to the saved session; signing out does not provide a way to recover it or switch to the other partner.
 
-Deployment from the parent directory requires the securely supplied key for exactly `dev:helpful-kudu-864`. Use `npx convex deploy --typecheck enable` only after checking that target; never use `--prod` or fall back to a default deployment. The starter must remain additive.
+Drafts are stored locally in AsyncStorage, keyed by deployment and profile. They are not encrypted by AsyncStorage. Before any launch, the exact sealed payload and one request key are saved. An unacknowledged send stays immutable across retries and reloads; it cannot be silently edited into a second flight. The draft is cleared only after acknowledgement. If local cleanup fails after acknowledgement, the session retries cleanup without launching again. An unreadable saved draft is not silently overwritten.
+
+The display clock is anchored to `profiles.clock`, with reconnect/foreground refresh and `settleMine` recovery. Reaching zero means **Awaiting server confirmation**, never optimistic delivery. The public shared-counter diagnostic remains accessible from the footer, including before sign-in.
+
+Web phone-size evidence is not physical iPhone proof. Native execution still needs an approved Expo Go or device test; JavaScript export alone does not prove it.
