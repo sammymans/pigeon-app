@@ -72,7 +72,7 @@ export function MapScreen({ flights, selected, serverNow, scope, onScope, onSele
       </View>
       {Platform.OS !== 'web' && <View pointerEvents="box-none" style={[styles.mapTools, { bottom: sheetHeight + 8 }]}>
         <View pointerEvents="none" style={styles.caption}><Text style={styles.captionText}>{stale ? 'Offline · routes only' : serverNow === null && flights.length ? 'Syncing clock · routes only' : 'City routes · not GPS'}</Text></View>
-        <IconButton name="nearby" label={selectedFlight ? 'Fit selected flight' : flights.length ? 'Fit all flights' : 'Reset world view'} round onPress={() => setFitRequest(value => value + 1)} />
+        <IconButton name="nearby" label={selectedFlight ? 'Fit selected flight' : flights.length ? 'Flight overview' : 'Reset world view'} round onPress={() => setFitRequest(value => value + 1)} />
       </View>}
       {children ? <ScrollView onLayout={event => setSheetHeight(event.nativeEvent.layout.height)} style={[styles.sheet, { maxHeight: sheetLimit }]}>{children}</ScrollView> : <View onLayout={event => setSheetHeight(event.nativeEvent.layout.height)} style={[styles.sheet, { paddingBottom: Math.max(12, insets.bottom), maxHeight: sheetLimit }, expanded && { height: Math.min(sheetLimit, Math.max(320, height * 0.51)) }]}>
         <View {...drag.panHandlers}><Pressable accessibilityRole="button" accessibilityLabel={expanded ? 'Collapse flight list' : 'Expand flight list'} accessibilityState={{ expanded }} onPress={() => setExpanded(value => !value)} style={styles.handleTarget}><View style={styles.handle} /></Pressable></View>
