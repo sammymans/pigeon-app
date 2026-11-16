@@ -1,3 +1,4 @@
+import type { City } from '../../src/domain';
 import type { MailLetter, MailPerson } from '../mailboxModel';
 
 export const previewPeople: MailPerson[] = [
@@ -6,10 +7,10 @@ export const previewPeople: MailPerson[] = [
   { id: 'jules', recipientId: 'jules', name: 'Jules', city: 'Paris' },
   { id: 'nina', recipientId: 'nina', name: 'Nina', city: 'Berlin' },
   { id: 'robin', recipientId: 'robin', name: 'Robin', city: 'San Francisco' },
-  { id: 'sammy', recipientId: 'sammy', name: 'Sammy', city: 'London' },
+  { id: 'sammy', recipientId: 'sammy', name: 'Sammy', city: 'Vancouver' },
 ];
-export const nearbyPerson: MailPerson = { id: 'nearby', recipientId: 'nearby', name: 'Someone nearby', city: 'New York' };
-export type PreviewLetter = MailLetter & { body: string; signature?: string };
+export const nearbyPerson: MailPerson = { id: 'nearby', recipientId: 'nearby', name: 'Someone nearby', city: 'Nearby' };
+export type PreviewLetter = MailLetter & { body: string; signature?: string; person?: MailPerson; replyDestination?: City };
 
 export function sampleLetters(now: number): PreviewLetter[] {
   const counts = [4, 12, 6, 9, 3, 8];

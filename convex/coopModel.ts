@@ -6,7 +6,7 @@ export async function readCoop(ctx: QueryCtx, profile: Doc<'profiles'>, now: num
   const wallet = await ctx.db.query('coopWallets').withIndex('by_ownerId', q => q.eq('ownerId', profile._id)).unique();
   if (wallet) return refillStones(wallet.state, now);
   const birds = await ctx.db.query('pigeons').withIndex('by_ownerId', q => q.eq('ownerId', profile._id)).collect();
-  return initialShop(now, birds.sort((a, b) => a.slot - b.slot)[0]?._id);
+  return initialShop(now, birds.filter(bird => !bird.commerceRevoked).sort((a, b) => a.slot - b.slot)[0]?._id);
 }
 
 export async function saveCoop(ctx: MutationCtx, profile: Doc<'profiles'>, state: ShopState) {

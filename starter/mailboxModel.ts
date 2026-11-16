@@ -1,6 +1,6 @@
 import { cityById, type FlightSummary, type Profile } from '../src/domain';
 
-export type MailPerson = { id: string; name: string; city: string; recipientId?: string };
+export type MailPerson = { id: string; name: string; city: string; recipientId?: string; invited?: boolean };
 export type MailLetter = { id: string; personId: string; direction: 'incoming' | 'outgoing'; state: 'in_flight' | 'delivered' | 'intercepted'; at: number; arrivesAt: number; courier: string; opened: boolean; caught?: boolean; replyBy?: number };
 export type PersonMailbox = MailPerson & { letters: MailLetter[]; unopened: number };
 

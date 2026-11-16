@@ -7,7 +7,7 @@ import { city, cityId, connectionState, defense, event, flightState, outcome, ou
 
 export default defineSchema({
   phoneLimits: defineTable({ key: v.string(), windowStart: v.number(), count: v.number(), retryAt: v.number() }).index('by_key', ['key']),
-  pigeons: defineTable({ ownerId: v.id('profiles'), name: v.string(), slot: v.number() }).index('by_ownerId', ['ownerId']),
+  pigeons: defineTable({ ownerId: v.id('profiles'), name: v.string(), slot: v.number(), commerceRevoked: v.optional(v.boolean()) }).index('by_ownerId', ['ownerId']),
   starterDemo: defineTable({ key: v.literal('shared'), value: v.number() }).index('by_key', ['key']),
   starterPairs: defineTable({
     ownerId: v.id('profiles'), partnerId: v.optional(v.id('profiles')), namespace: v.string(),

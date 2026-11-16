@@ -25,7 +25,7 @@ export const transact = mutation({
     const birds = await ctx.db.query('pigeons').withIndex('by_ownerId', q => q.eq('ownerId', profile._id)).collect();
     const now = Date.now();
     const state = await readCoop(ctx, profile, now);
-    try { await saveCoop(ctx, profile, applyShopAction(state, action, birds.map(bird => ({ id: bird._id, name: bird.name })), now)); }
+    try { await saveCoop(ctx, profile, applyShopAction(state, action, birds.filter(bird => !bird.commerceRevoked).map(bird => ({ id: bird._id, name: bird.name })), now)); }
     catch (error) { if (error instanceof Error) throw new ConvexError(error.message); throw error; }
     await ctx.db.insert('coopReceipts', { ownerId: profile._id, requestKey, action });
     return null;

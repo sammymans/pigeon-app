@@ -13,13 +13,13 @@ export type InterceptionGame = {
   pull: Point;
   shot: Shot | null;
   missedAt: number | null;
-  escapeReason?: 'time' | 'shots' | 'stones';
+  escapeReason?: 'time' | 'stones' | 'shots';
 };
 
-export const SLING = { x: 0.5, y: 0.76 };
-export const MAX_SHOTS = 2;
+export const SLING = { x: 0.5, y: 0.70 };
 export const SKY_WINDOW_MS = 28_000;
 export const AIM_WINDOW_MS = 10_000;
+export const MAX_SHOTS = 2;
 const GRAVITY = 0.72;
 const POWER = 7;
 
@@ -35,7 +35,12 @@ export function createGame(now: number, stones: number): InterceptionGame {
 }
 
 export function pigeonPosition(elapsedMs: number): Point {
-  return { x: 0.5 + 0.33 * Math.sin(elapsedMs / 1300 + 0.5), y: 0.23 + 0.045 * Math.sin(elapsedMs / 800) };
+  // A full crossing takes about 1.25 seconds. Lead the bird instead of chasing it.
+  return { x: 0.5 + 0.33 * Math.sin(elapsedMs / 400 + 0.5), y: 0.18 + 0.06 * Math.sin(elapsedMs / 250) };
+}
+
+export function shotsRemaining(game: InterceptionGame) {
+  return Math.max(0, Math.min(MAX_SHOTS - game.shots, game.stones));
 }
 
 export function constrainPull(pull: Point): Point {
@@ -72,7 +77,7 @@ export function advanceGame(game: InterceptionGame, now: number): InterceptionGa
     for (let at = shot.checkedAt; at <= end; at += 8) {
       const stone = stonePosition(shot, at);
       const pigeon = pigeonPosition(at - game.enteredAt);
-      if (Math.hypot((stone.x - pigeon.x) / 0.06, (stone.y - pigeon.y) / 0.045) <= 1) {
+      if (Math.hypot((stone.x - pigeon.x) / 0.05, (stone.y - pigeon.y) / 0.038) <= 1) {
         return { ...next, phase: 'caught', now: at };
       }
     }
@@ -82,7 +87,7 @@ export function advanceGame(game: InterceptionGame, now: number): InterceptionGa
     }
     return { ...next, shot: { ...shot, checkedAt: end } };
   }
-  if (game.phase === 'miss' && game.missedAt !== null && now - game.missedAt >= 850 && (game.shots >= MAX_SHOTS || game.stones === 0)) {
+  if (game.phase === 'miss' && game.missedAt !== null && now - game.missedAt >= 850 && shotsRemaining(game) === 0) {
     return { ...next, phase: 'escaped', escapeReason: game.shots >= MAX_SHOTS ? 'shots' : 'stones' };
   }
   return next;
@@ -90,7 +95,7 @@ export function advanceGame(game: InterceptionGame, now: number): InterceptionGa
 
 export function beginAim(game: InterceptionGame, now: number): InterceptionGame {
   const current = advanceGame(game, now);
-  if (!['ready', 'miss'].includes(current.phase) || current.shots >= MAX_SHOTS || current.stones <= 0) return current;
+  if (!['ready', 'miss'].includes(current.phase) || shotsRemaining(current) === 0) return current;
   return { ...current, phase: 'aiming', deadline: current.deadline ?? now + AIM_WINDOW_MS, pull: { x: 0, y: 0 } };
 }
 
@@ -104,7 +109,7 @@ export function cancelAim(game: InterceptionGame): InterceptionGame {
 
 export function releaseShot(game: InterceptionGame, now: number): InterceptionGame {
   const current = advanceGame(game, now);
-  if (current.phase !== 'aiming' || current.shots >= MAX_SHOTS || current.stones <= 0) return current;
+  if (current.phase !== 'aiming' || shotsRemaining(current) === 0) return current;
   // Tapping, dragging upward, or cancelling does not spend a stone.
   if (current.pull.y < 0.035) return cancelAim(current);
   return { ...current, phase: 'flight', shot: makeShot(current.pull, now), shots: current.shots + 1, stones: current.stones - 1, pull: { x: 0, y: 0 } };

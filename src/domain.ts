@@ -1,5 +1,6 @@
 export const cities = [
   { id: 'san-francisco', name: 'San Francisco', country: 'US', lat: 37.7749, lng: -122.4194 },
+  { id: 'vancouver', name: 'Vancouver', country: 'CA', lat: 49.2827, lng: -123.1207 },
   { id: 'los-angeles', name: 'Los Angeles', country: 'US', lat: 34.0522, lng: -118.2437 },
   { id: 'new-york', name: 'New York', country: 'US', lat: 40.7128, lng: -74.006 },
   { id: 'chicago', name: 'Chicago', country: 'US', lat: 41.8781, lng: -87.6298 },
@@ -85,7 +86,7 @@ export type AttemptResult = {
 
 export type Order = {
   id: string;
-  sku: 'aviator';
+  sku: import('./shop').CommerceSku;
   status: 'pending' | 'paid' | 'failed' | 'refunded' | 'reconciliation';
   purchaseUrl?: string;
   createdAt: number;

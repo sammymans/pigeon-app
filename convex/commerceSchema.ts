@@ -2,9 +2,11 @@ import { defineTable } from 'convex/server';
 import { v } from 'convex/values';
 
 export const outfitValidator = v.union(v.literal('classic'), v.literal('aviator'));
+export const skuValidator = v.union(v.literal('aviator'), v.literal('points_100'), v.literal('points_550'), v.literal('points_1200'), v.literal('pigeon'));
+export const environmentValidator = v.union(v.literal('sandbox'), v.literal('production'));
 export const orderStatusValidator = v.union(v.literal('pending'), v.literal('paid'), v.literal('failed'), v.literal('refunded'), v.literal('reconciliation'));
 export const orderValidator = v.object({
-  id: v.string(), sku: v.literal('aviator'), status: orderStatusValidator,
+  id: v.string(), sku: skuValidator, status: orderStatusValidator,
   purchaseUrl: v.optional(v.string()), createdAt: v.number(),
 });
 const nullableString = v.union(v.string(), v.null());
@@ -25,11 +27,13 @@ export const eventPayloadValidator = v.object({
 export const commerceTables = {
   commerceOrders: defineTable({
     profileId: v.id('profiles'), userId: v.id('users'), intentId: v.string(),
-    requestKey: v.string(), sku: v.literal('aviator'), status: orderStatusValidator,
-    environment: v.literal('sandbox'), accountId: v.string(), variantId: v.string(),
+    requestKey: v.string(), sku: skuValidator, status: orderStatusValidator,
+    environment: environmentValidator, accountId: v.string(), variantId: v.string(),
     currency: v.literal('usd'), baseCents: v.number(), taxBasis: v.literal('exclusive'), redirectUrl: v.string(),
     checkoutId: v.optional(v.string()), purchaseUrl: v.optional(v.string()),
     paymentId: v.optional(v.string()), createdAt: v.number(), updatedAt: v.number(),
+    points: v.optional(v.number()), pointsGranted: v.optional(v.boolean()),
+    pointsReversed: v.optional(v.number()), pigeonId: v.optional(v.id('pigeons')),
   }).index('by_profileId_and_requestKey', ['profileId', 'requestKey'])
     .index('by_profileId_and_status', ['profileId', 'status'])
     .index('by_profileId_and_createdAt', ['profileId', 'createdAt']).index('by_intentId', ['intentId'])
@@ -48,5 +52,6 @@ export const commerceTables = {
     state: v.union(v.literal('queued'), v.literal('processed'), v.literal('ignored'), v.literal('reconciliation')),
     reason: v.optional(v.string()), orderId: v.optional(v.id('commerceOrders')),
     attempts: v.number(), receivedAt: v.number(), processedAt: v.optional(v.number()),
+    environment: v.optional(environmentValidator),
   }).index('by_eventId', ['eventId']).index('by_state', ['state']),
 };

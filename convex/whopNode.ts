@@ -6,13 +6,14 @@ import { v } from 'convex/values';
 import { internalAction } from './_generated/server';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
-import { eventPayload, paymentSnapshot, requireSandboxConfig, sandboxConfig, whopRequest } from './whopProtocol';
+import { eventPayload, paymentSnapshot, requireWhopConfig, whopConfig, whopRequest } from './whopProtocol';
+import { environmentValidator } from './commerceSchema';
 
 export const receive = internalAction({
-  args: { body: v.string(), headers: v.record(v.string(), v.string()) },
+  args: { body: v.string(), headers: v.record(v.string(), v.string()), environment: v.optional(environmentValidator) },
   returns: v.object({ status: v.number() }),
-  handler: async (ctx, { body, headers }) => {
-    const config = sandboxConfig();
+  handler: async (ctx, { body, headers, environment }) => {
+    const config = whopConfig(environment);
     if (!config) return { status: 503 };
     let event: unknown;
     try {
@@ -24,7 +25,7 @@ export const receive = internalAction({
     if (!eventId || eventId.length > 200) return { status: 400 };
     await ctx.runMutation(internal.commerceData.ingestEvent, {
       eventId, payloadHash: createHash('sha256').update(body).digest('hex'),
-      payload: eventPayload(event, eventId),
+      payload: eventPayload(event, eventId), environment: config.environment,
     });
     return { status: 200 };
   },
@@ -36,9 +37,9 @@ export const fulfill = internalAction({
     const event: Doc<'commerceEvents'> | null = await ctx.runQuery(internal.commerceData.eventForProcessing, { eventId });
     if (!event || event.state !== 'queued' || !event.payload.paymentId) return null;
     try {
-      const config = requireSandboxConfig();
-      const payment = paymentSnapshot(await whopRequest(`/payments/${encodeURIComponent(event.payload.paymentId)}`, config.apiKey));
-      await ctx.runMutation(internal.commerceData.processPayment, { eventId, payment, sourceEnvironment: 'sandbox' });
+      const config = requireWhopConfig(event.environment ?? 'sandbox');
+      const payment = paymentSnapshot(await whopRequest(`/payments/${encodeURIComponent(event.payload.paymentId)}`, config.apiKey, undefined, undefined, config.environment));
+      await ctx.runMutation(internal.commerceData.processPayment, { eventId, payment, sourceEnvironment: config.environment });
     } catch {
       await ctx.runMutation(internal.commerceData.retryEvent, { eventId });
     }

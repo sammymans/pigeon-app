@@ -1,13 +1,15 @@
 import { cityById, type City, type FlightSummary } from '../../src/domain';
 import { flightProgress } from '../../src/ui/flightGeometry';
+import type { Accessory } from '../../src/shop';
 
 export type Coordinate = { latitude: number; longitude: number };
 export type SkyMapData = {
+  userLocation?: Coordinate;
   nearby?: { center: Coordinate; radiusKm: number; locationKnown: boolean };
   focusKey: string;
   focusCoordinates: Coordinate[];
   routes: { id: string; coordinates: Coordinate[]; selected: boolean; origin: City; destination: City }[];
-  markers: { id: string; coordinate: Coordinate; selected: boolean; label: string }[];
+  markers: { id: string; courier: string; accessory?: Accessory | null; facingLeft: boolean; coordinate: Coordinate; selected: boolean; label: string }[];
 };
 export type SkyMapProps = { data: SkyMapData; onSelect?: (id: string) => void; onLocationChange?: (point: Coordinate) => void; topInset: number; bottomInset: number; scope: 'mine' | 'world' };
 
@@ -45,6 +47,6 @@ export function skyMapData(flights: FlightSummary[], selected: string | null, no
     focusKey: focus ? `${focus.id}:${focus.origin.id}:${focus.destination.id}` : routes.length ? `all:${routes.map(route => route.id).join(':')}` : 'atlantic',
     focusCoordinates: routes.find(route => route.selected)?.coordinates ?? (routes.length ? routes.flatMap(route => route.coordinates) : routeCoordinates(cityById('new-york'), cityById('london'))),
     routes,
-    markers: flights.map(flight => ({ id: flight.id, coordinate: flightCoordinate(flight.origin, flight.destination, now === null ? 0 : flightProgress(flight, now)), selected: flight.id === focus?.id, label: `${flight.courier}, pigeon from ${flight.origin.name} to ${flight.destination.name}. Tap for flight details.` })),
+    markers: flights.map(flight => ({ id: flight.id, courier: flight.courier, facingLeft: ((flight.destination.lng - flight.origin.lng + 540) % 360) - 180 < 0, coordinate: flightCoordinate(flight.origin, flight.destination, now === null ? 0 : flightProgress(flight, now)), selected: flight.id === focus?.id, label: `${flight.courier}, pigeon from ${flight.origin.name} to ${flight.destination.name}. Tap for flight details.` })),
   };
 }

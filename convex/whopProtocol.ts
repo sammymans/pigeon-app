@@ -1,5 +1,6 @@
 import { ConvexError, type Infer } from 'convex/values';
 import { env } from './_generated/server';
+import { pointPacks, type CommerceSku } from '../src/shop';
 import type { eventPayloadValidator, paymentValidator } from './commerceSchema';
 
 export const WHOP_API_BASE = 'https://sandbox-api.whop.com/api/v1';
@@ -38,7 +39,7 @@ export function paymentSnapshot(value: unknown): PaymentSnapshot {
     taxBehavior: text(payment.tax_behavior),
     refundedCents: payment.refunded_amount === null ? 0 : moneyCents(payment.refunded_amount),
     status: text(payment.status), substatus: text(payment.substatus),
-    validLineItem: items.length === 1 && item.variant_id === payment.variant_id && item.quantity === 1 && moneyCents(item.subtotal) === AVIATOR_CENTS,
+    validLineItem: items.length === 1 && item.variant_id === payment.variant_id && item.quantity === 1 && moneyCents(item.subtotal) !== null && moneyCents(item.subtotal) === moneyCents(payment.subtotal),
   };
 }
 
@@ -54,30 +55,72 @@ export function eventPayload(value: unknown, headerId: string): EventPayload {
   };
 }
 
-export function sandboxConfig() {
-  const apiKey = env.WHOP_SANDBOX_API_KEY;
-  const webhookSecret = env.WHOP_SANDBOX_WEBHOOK_SECRET;
-  const accountId = env.WHOP_SANDBOX_ACCOUNT_ID;
-  const variantId = env.WHOP_SANDBOX_VARIANT_ID;
+export type WhopEnvironment = 'sandbox' | 'production';
+
+export function activeEnvironment(): WhopEnvironment | null {
+  const value = env.WHOP_ENVIRONMENT ?? 'sandbox';
+  return value === 'sandbox' || value === 'production' ? value : null;
+}
+
+export function productFor(sku: CommerceSku) {
+  if (sku === 'aviator') return { title: 'Aviator Pack', cents: AVIATOR_CENTS, points: 0 };
+  if (sku === 'pigeon') {
+    const value = env.PIGEON_PRICE_CENTS ?? '500';
+    const cents = /^\d+$/.test(value) ? Number(value) : 0;
+    return { title: 'One more pigeon', cents: Number.isSafeInteger(cents) && cents >= 50 && cents <= 100000 ? cents : 0, points: 0 };
+  }
+  const pack = pointPacks.find(pack => pack.sku === sku)!;
+  return { title: `${pack.points.toLocaleString('en-US')} points`, cents: pack.cents, points: pack.points };
+}
+
+// All credentials are server-only. A typo never falls back to production.
+export function whopConfig(environment = activeEnvironment()) {
+  if (!environment) return null;
+  const live = environment === 'production';
+  const apiKey = live ? env.WHOP_LIVE_API_KEY : env.WHOP_SANDBOX_API_KEY;
+  const webhookSecret = live ? env.WHOP_LIVE_WEBHOOK_SECRET : env.WHOP_SANDBOX_WEBHOOK_SECRET;
+  const accountId = live ? env.WHOP_LIVE_ACCOUNT_ID : env.WHOP_SANDBOX_ACCOUNT_ID;
   const origin = env.PIGEON_PUBLIC_ORIGIN;
-  if (!apiKey?.trim() || !webhookSecret?.startsWith('ws_') || !accountId?.match(/^biz_[A-Za-z0-9]+$/) || !variantId?.match(/^plan_[A-Za-z0-9]+$/) || !origin) return null;
+  if (!apiKey?.trim() || !webhookSecret?.startsWith('ws_') || !accountId?.match(/^biz_[A-Za-z0-9]+$/) || !origin) return null;
   try {
     const url = new URL(origin);
     if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') return null;
-    return { apiKey, webhookSecret, accountId, variantId, origin: url.origin };
-  } catch {
-    return null;
-  }
+    return { apiKey, webhookSecret, accountId, origin: url.origin, environment };
+  } catch { return null; }
 }
 
-export function requireSandboxConfig() {
-  const config = sandboxConfig();
-  if (!config) throw new ConvexError('Whop sandbox is not configured. No payment has been started.');
+export function productConfig(sku: CommerceSku) {
+  const config = whopConfig();
+  if (!config || !productFor(sku).cents) return null;
+  const variants = config.environment === 'production' ? {
+    aviator: env.WHOP_LIVE_VARIANT_ID, points_100: env.WHOP_LIVE_POINTS_100_VARIANT_ID,
+    points_550: env.WHOP_LIVE_POINTS_550_VARIANT_ID, points_1200: env.WHOP_LIVE_POINTS_1200_VARIANT_ID,
+    pigeon: env.WHOP_LIVE_PIGEON_VARIANT_ID,
+  } : {
+    aviator: env.WHOP_SANDBOX_VARIANT_ID, points_100: env.WHOP_SANDBOX_POINTS_100_VARIANT_ID,
+    points_550: env.WHOP_SANDBOX_POINTS_550_VARIANT_ID, points_1200: env.WHOP_SANDBOX_POINTS_1200_VARIANT_ID,
+    pigeon: env.WHOP_SANDBOX_PIGEON_VARIANT_ID,
+  };
+  const variantId = variants[sku];
+  if (!variantId?.match(/^plan_[A-Za-z0-9]+$/)) return null;
+  return { ...config, variantId };
+}
+
+export function requireProductConfig(sku: CommerceSku) {
+  const config = productConfig(sku);
+  if (!config) throw new ConvexError('Whop checkout is not configured for this item. No payment has been started.');
   return config;
 }
 
-export async function whopRequest(path: string, apiKey: string, body?: Record<string, unknown>, idempotencyKey?: string): Promise<unknown> {
-  const response = await fetch(`${WHOP_API_BASE}${path}`, {
+export function requireWhopConfig(environment: WhopEnvironment) {
+  const config = whopConfig(environment);
+  if (!config) throw new ConvexError('Whop is not configured for this environment.');
+  return config;
+}
+
+export async function whopRequest(path: string, apiKey: string, body?: Record<string, unknown>, idempotencyKey?: string, environment: WhopEnvironment = 'sandbox'): Promise<unknown> {
+  const base = environment === 'production' ? 'https://api.whop.com/api/v1' : WHOP_API_BASE;
+  const response = await fetch(`${base}${path}`, {
     method: body ? 'POST' : 'GET',
     headers: {
       Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json',
@@ -85,10 +128,9 @@ export async function whopRequest(path: string, apiKey: string, body?: Record<st
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
-    signal: AbortSignal.timeout(12000),
-    redirect: 'error',
+    signal: AbortSignal.timeout(12000), redirect: 'error',
   });
-  if (!response.ok) throw new ConvexError(`Whop sandbox request failed (${response.status}). Retry or contact the demo operator.`);
+  if (!response.ok) throw new ConvexError(`Whop request failed (${response.status}). Retry or contact support.`);
   return await response.json() as unknown;
 }
 

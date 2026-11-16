@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ComponentRef, type ReactNode } from 'react';
 import { ConvexError } from 'convex/values';
-import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { IconButton, PrimaryButton, font, palette } from './page03/atoms';
@@ -28,7 +28,7 @@ export function OnboardingFrame({ step, back, children, footer }: { step?: numbe
 
 function WelcomeArt({ compact }: { compact: boolean }) {
   const [height, setHeight] = useState(214);
-  return <View onLayout={event => setHeight(event.nativeEvent.layout.height)} style={[o.welcomeArt, compact && { marginTop: 8, marginBottom: 8 }]}><View style={[o.welcomeScene, { transform: [{ scale: Math.min(1, height / 214) }] }]}><View style={o.halo} /><Pigeon /><View style={o.envelope}><Svg width={60} height={43} viewBox="0 0 60 43"><Rect x={2} y={2} width={56} height={39} rx={5} fill="white" stroke="#AFBDCE" strokeWidth={1.5} /><Path d="m4 5 25 20c1 1 2 1 3 0L56 5M4 37l19-17m33 17L38 21" fill="none" stroke="#AFBDCE" strokeWidth={1.5} /><Rect x={44} y={7} width={8} height={9} rx={1} fill={palette.blue} /></Svg></View></View></View>;
+  return <View onLayout={event => setHeight(event.nativeEvent.layout.height)} style={[o.welcomeArt, compact && { marginTop: 8, marginBottom: 8 }]}><View style={[o.welcomeScene, { transform: [{ scale: Math.min(1, height / 214) }] }]}><Pigeon /><View style={o.envelope}><Svg width={60} height={43} viewBox="0 0 60 43"><Rect x={2} y={2} width={56} height={39} rx={5} fill="white" stroke="#AFBDCE" strokeWidth={1.5} /><Path d="m4 5 25 20c1 1 2 1 3 0L56 5M4 37l19-17m33 17L38 21" fill="none" stroke="#AFBDCE" strokeWidth={1.5} /><Rect x={44} y={7} width={8} height={9} rx={1} fill={palette.blue} /></Svg></View></View></View>;
 }
 
 function ErrorMessage({ children }: { children: string }) {
@@ -156,7 +156,6 @@ const o = StyleSheet.create({
   separator: { height: 24, width: 1, backgroundColor: palette.line, marginRight: 4 },
   welcomeArt: { height: 214, flexShrink: 1, minHeight: 0, overflow: 'hidden', marginTop: 24, marginBottom: 20, alignItems: 'center', justifyContent: 'center' },
   welcomeScene: { width: '100%', height: 214, flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
-  halo: { position: 'absolute', width: 180, height: 160, borderRadius: 100, backgroundColor: '#EAF1F7', top: 25 },
   envelope: { position: 'absolute', top: 140, left: '65%', transform: [{ rotate: '9deg' }] },
   footer: { marginTop: 'auto', paddingTop: 32, gap: 12 },
   legal: { textAlign: 'center', marginTop: 4 },

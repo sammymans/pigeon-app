@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import * as Location from 'expo-location';
-import MapView, { Circle, Marker, Polyline } from 'react-native-maps';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import { Icon, palette } from './atoms';
 import { PigeonMarker } from './PigeonMarker';
 import type { SkyMapProps } from './mapData';
@@ -9,18 +9,20 @@ import { NEARBY_RADIUS_KM, offsetCoordinate } from './nearbyPigeon';
 
 export function SkyMap(props: SkyMapProps) {
   const { data, onSelect, bottomInset, scope } = props;
+  const { height } = useWindowDimensions();
   const map = useRef<MapView>(null);
   const latest = useRef(props);
   latest.current = props;
   const [ready, setReady] = useState(false);
   const [locating, setLocating] = useState(false);
-  const [userLocation, setUserLocation] = useState(data.nearby?.locationKnown ? data.nearby.center : null);
+  const [userLocation, setUserLocation] = useState(data.userLocation ?? (data.nearby?.locationKnown ? data.nearby.center : null));
   const locatingNow = useRef(false);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const initialCity = useRef(data.routes.find(route => route.selected)?.origin);
   const focusKey = `${scope}:${data.focusKey}`;
   const previousFocus = useRef(focusKey);
+  const previousInsets = useRef({ top: props.topInset, bottom: bottomInset });
   const initiallyFitted = useRef(false);
   const fit = useCallback((animated: boolean) => {
     const current = latest.current;
@@ -32,21 +34,19 @@ export function SkyMap(props: SkyMapProps) {
 
   // Show the pigeons on first load; clock ticks leave the user's camera alone.
   useEffect(() => {
-    if (ready && (!initiallyFitted.current || previousFocus.current !== focusKey)) {
+    const insetsChanged = previousInsets.current.top !== props.topInset || previousInsets.current.bottom !== bottomInset;
+    if (ready && (!initiallyFitted.current || previousFocus.current !== focusKey || insetsChanged)) {
+      previousInsets.current = { top: props.topInset, bottom: bottomInset };
       previousFocus.current = focusKey;
       fit(initiallyFitted.current);
       initiallyFitted.current = true;
     }
-  }, [ready, focusKey, fit]);
+  }, [ready, focusKey, fit, props.topInset, bottomInset]);
 
-  // Reuse existing permission on first load; otherwise the location button asks.
+  // Locate once on entry, then retain the location when returning from a letter.
   useEffect(() => {
-    if (!ready || !latest.current.onLocationChange || latest.current.data.nearby?.locationKnown) return;
-    let active = true;
-    void Location.getForegroundPermissionsAsync().then(permission => {
-      if (active && permission.granted) void locate();
-    }).catch(() => {});
-    return () => { active = false; };
+    if (!ready || !latest.current.onLocationChange || latest.current.data.userLocation || latest.current.data.nearby?.locationKnown) return;
+    void locate();
   }, [ready]);
 
   async function locate() {
@@ -112,23 +112,19 @@ export function SkyMap(props: SkyMapProps) {
       onMapReady={() => setReady(true)}
       accessibilityLabel="Flight map. Drag to explore and pinch to zoom."
     >
-      {data.nearby && <Circle center={data.nearby.center} radius={data.nearby.radiusKm * 1000} strokeColor="#7D99FF" strokeWidth={1.5} fillColor="rgba(36,83,255,0.06)" />}
-      {(data.nearby || userLocation) && <Marker coordinate={data.nearby?.center ?? userLocation!} title={data.nearby && !data.nearby.locationKnown ? 'Preview center' : 'Your location'} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false} zIndex={20}><View style={[styles.userLocation, data.nearby && !data.nearby.locationKnown && { backgroundColor: '#8597B3' }]} /></Marker>}
-      {data.routes.map(route => <Polyline key={route.id} coordinates={route.coordinates} geodesic strokeColor={route.selected ? palette.blue : '#93A9D0'} strokeWidth={route.selected ? 3 : 2} lineDashPattern={route.selected ? [6, 9] : [4, 9]} lineCap="round" />)}
+      {(data.nearby || userLocation) && <Marker coordinate={data.nearby?.center ?? userLocation!} title={data.nearby && !data.nearby.locationKnown ? 'New York' : 'Your location'} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false} zIndex={20}><View style={[styles.userLocation, data.nearby && !data.nearby.locationKnown && { backgroundColor: '#8597B3' }]} /></Marker>}
+      {data.routes.map(route => <Polyline key={route.id} coordinates={route.coordinates} geodesic strokeColor="#7D99FF" strokeWidth={1.5} lineDashPattern={[2, 2]} lineCap="butt" />)}
       {data.routes.flatMap(route => [route.origin, route.destination].map((city, index) => <Marker key={`${route.id}:${index}`} coordinate={{ latitude: city.lat, longitude: city.lng }} title={city.name} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}><View style={styles.endpoint} /></Marker>))}
-      {data.markers.map(marker => <Marker key={`${marker.id}:${marker.selected}`} coordinate={marker.coordinate} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false} zIndex={marker.selected ? 10 : 5} accessibilityLabel={marker.label} onPress={() => onSelect?.(marker.id)}><View style={[styles.marker, marker.selected && styles.selected]}><PigeonMarker size={marker.selected ? 32 : 27} color={marker.selected ? 'white' : palette.blue} /></View></Marker>)}
+      {data.markers.map(marker => <Marker key={`${marker.id}:${marker.selected}:${marker.accessory}`} coordinate={marker.coordinate} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false} zIndex={marker.selected ? 10 : 5} accessibilityLabel={marker.label} onPress={() => onSelect?.(marker.id)}><View style={[styles.marker, marker.selected && styles.selected]}><PigeonMarker name={marker.courier} accessory={marker.accessory} facingLeft={marker.facingLeft} size={marker.selected ? 68 : 60} /></View></Marker>)}
     </MapView>
-    {data.nearby && <View pointerEvents="none" style={[styles.nearbyLabel, { top: props.topInset + 14 }]}><Text style={styles.nearbyText}>5 KM · {data.nearby.locationKnown ? 'AROUND YOU' : 'PREVIEW AREA'}</Text><Text style={{ color: '#687383', fontSize: 11, marginTop: 3 }}>{data.nearby.locationKnown ? 'Tap a nearby pigeon to intercept.' : 'Use the location button to find pigeons near you.'}</Text></View>}
-    {bottomInset < 400 && <Pressable accessibilityRole="button" accessibilityLabel={locating ? 'Finding your location' : 'Center on my location'} accessibilityState={{ disabled: !ready || locating, busy: locating }} disabled={!ready || locating} onPress={() => void locate()} style={[styles.recenter, { bottom: bottomInset + 34 }]}>{locating ? <ActivityIndicator size="small" color={palette.blue} /> : <Icon name="nearby" size={22} />}</Pressable>}
+    {bottomInset < 400 && height - props.topInset - bottomInset >= 88 && <Pressable accessibilityRole="button" accessibilityLabel={locating ? 'Finding your location' : 'Center on my location'} accessibilityState={{ disabled: !ready || locating, busy: locating }} disabled={!ready || locating} onPress={() => void locate()} style={[styles.recenter, { bottom: bottomInset + 34 }]}>{locating ? <ActivityIndicator size="small" color={palette.blue} /> : <Icon name="nearby" size={22} />}</Pressable>}
   </View>;
 }
 
 const styles = StyleSheet.create({
-  nearbyLabel: { position: 'absolute', left: 24, padding: 10, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.94)' },
-  nearbyText: { fontSize: 10, fontWeight: '600', letterSpacing: 1, color: palette.blue },
   userLocation: { width: 18, height: 18, borderRadius: 9, borderWidth: 3, borderColor: 'white', backgroundColor: palette.blue },
   endpoint: { width: 14, height: 14, borderRadius: 7, borderWidth: 3, borderColor: 'white', backgroundColor: palette.blue },
-  marker: { width: 44, height: 44, borderRadius: 22, borderWidth: 3, borderColor: 'white', backgroundColor: '#EEF3FF', alignItems: 'center', justifyContent: 'center' },
-  selected: { width: 52, height: 52, borderRadius: 26, backgroundColor: palette.blue },
+  marker: { width: 60, height: 60, alignItems: 'center', justifyContent: 'center' },
+  selected: { width: 68, height: 68 },
   recenter: { position: 'absolute', right: 22, width: 44, height: 44, borderRadius: 22, backgroundColor: 'white', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 12px rgba(23,33,43,0.12)' },
 });

@@ -37,9 +37,13 @@ describe('mailbox navigation and replies', () => {
   });
   it('keeps a composed draft when closing and reopening its sheet', async () => {
     await render(); await act(async () => node('grid').props.onCompose());
+    await act(async () => node('recipients').props.onSelect('sammy'));
+    await act(async () => node('recipients').props.onNext());
     await act(async () => node('composer').props.onChange('Meet me for coffee?'));
     await act(async () => node('composer').props.onClose());
     await act(async () => node('grid').props.onCompose());
+    expect(node('recipients').props.selected).toBe('sammy');
+    await act(async () => node('recipients').props.onNext());
     expect(node('composer').props.body).toBe('Meet me for coffee?');
   });
   it('requires explicit replacement before a reply can overwrite a saved draft', async () => {

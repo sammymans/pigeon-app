@@ -6,6 +6,7 @@ import schema from './schema';
 import { api, internal } from './_generated/api';
 import { eventPayload, moneyCents, paymentSnapshot, WHOP_API_VERSION } from './whopProtocol';
 import { cityById } from '../src/domain';
+import { pointPacks, type CommerceSku } from '../src/shop';
 
 const modules = import.meta.glob('./**/*.ts');
 const testKey = 'ws_unit_test_fixture_not_a_real_credential';
@@ -13,13 +14,18 @@ const accountId = 'biz_testaccount';
 const variantId = 'plan_testaviator';
 const checkoutId = 'ch_testcheckout';
 const testEnvironment = {
+  WHOP_ENVIRONMENT: 'sandbox',
   WHOP_SANDBOX_API_KEY: 'unit-test-api-key', WHOP_SANDBOX_WEBHOOK_SECRET: testKey,
   WHOP_SANDBOX_ACCOUNT_ID: accountId, WHOP_SANDBOX_VARIANT_ID: variantId,
   PIGEON_PUBLIC_ORIGIN: 'https://pigeon.example',
+  WHOP_SANDBOX_POINTS_100_VARIANT_ID: 'plan_points100',
+  WHOP_SANDBOX_POINTS_550_VARIANT_ID: 'plan_points550',
+  WHOP_SANDBOX_POINTS_1200_VARIANT_ID: 'plan_points1200',
+  WHOP_SANDBOX_PIGEON_VARIANT_ID: 'plan_pigeon', PIGEON_PRICE_CENTS: '500',
 };
 const money = (amount: string, currency = 'usd') => ({ amount, currency, decimals: 2, display_decimals: 2 });
 
-async function setup() {
+async function setup(sku: CommerceSku = 'aviator') {
   const t = convexTest(schema, modules);
   const users = await t.run(async (ctx) => {
     const alice = await ctx.db.insert('users', { email: 'commerce-alice@example.invalid' });
@@ -30,7 +36,7 @@ async function setup() {
   });
   const alice = t.withIdentity({ subject: `${users.alice}|test-session` });
   const bob = t.withIdentity({ subject: `${users.bob}|test-session` });
-  const order = await alice.mutation(internal.commerceData.beginCheckout, { requestKey: 'request-one', intentId: 'opaque-order-one' });
+  const order = await alice.mutation(internal.commerceData.beginCheckout, { sku, requestKey: 'request-one', intentId: 'opaque-order-one' });
   await alice.mutation(internal.commerceData.attachCheckout, { id: order._id, checkoutId, purchaseUrl: `https://sandbox.whop.com/checkout/${checkoutId}/` });
   return { t, alice, bob, order, profileId: users.profileId, recipientId: users.recipientId };
 }
@@ -120,7 +126,7 @@ describe('sandbox commerce authorization and checkout', () => {
       expect(body.plan_id).toBeUndefined();
       expect(body.metadata.environment).toBe('sandbox');
       expect(body.metadata.order_id).toMatch(/^[a-f0-9-]{36}$/);
-      expect(body.redirect_url).toBe(`https://pigeon.example/checkout-return?order=${body.metadata.order_id}`);
+      expect(body.redirect_url).toBe(`https://pigeon.example/?checkout_order=${body.metadata.order_id}`);
       expect((init.headers as Record<string, string>)['Idempotency-Key']).toBe(`pigeon-${body.metadata.order_id}`);
       return Response.json({ ...body, id: 'ch_secondcheckout', variant: { id: variantId, billing_type: 'one_time', initial_price: 2.99, currency: 'usd', adaptive_pricing_enabled: false }, purchase_url: 'https://sandbox.whop.com/checkout/ch_secondcheckout/' });
     });
@@ -148,13 +154,160 @@ describe('sandbox commerce authorization and checkout', () => {
   it('requires all five valid config values and exposes no secrets', async () => {
     const { t } = await setup();
     expect(await t.query(api.commerce.catalog, {})).toEqual({ configured: true, priceLabel: '$2.99 USD · one time', testMode: true });
-    for (const [name, prior] of Object.entries(testEnvironment)) {
+    for (const name of ['WHOP_SANDBOX_API_KEY', 'WHOP_SANDBOX_WEBHOOK_SECRET', 'WHOP_SANDBOX_ACCOUNT_ID', 'WHOP_SANDBOX_VARIANT_ID', 'PIGEON_PUBLIC_ORIGIN'] as const) {
+      const prior = testEnvironment[name];
       vi.stubEnv(name, '');
       expect((await t.query(api.commerce.catalog, {})).configured).toBe(false);
       vi.stubEnv(name, prior);
     }
     vi.stubEnv('PIGEON_PUBLIC_ORIGIN', 'http://pigeon.example');
     expect((await t.query(api.commerce.catalog, {})).configured).toBe(false);
+  });
+});
+
+function storePayment(order: { intentId: string; variantId: string; baseCents: number; environment: string }) {
+  const amount = (order.baseCents / 100).toFixed(2);
+  return { ...payment(order.intentId), variant_id: order.variantId,
+    metadata: { order_id: order.intentId, environment: order.environment },
+    subtotal: money(amount), total: money(amount),
+    line_items: [{ variant_id: order.variantId, quantity: 1, subtotal: money(amount) }],
+  };
+}
+
+describe('Coop shop Whop purchases', () => {
+  it.each(pointPacks)('credits $points points once for $sku, including its bonus', async pack => {
+    const { t, alice, bob, order } = await setup(pack.sku);
+    const data = storePayment(order);
+    const success = event(data);
+    expect((await alice.query(api.coop.mine, {})).points).toBe(120);
+    await deliver(t, success);
+    await deliver(t, success);
+    await deliver(t, event(data, 'msg_duplicatepayment'));
+    expect((await alice.query(api.coop.mine, {})).points).toBe(120 + pack.points);
+    expect((await bob.query(api.coop.mine, {})).points).toBe(120);
+    expect((await alice.query(api.commerce.orders, {}))[0].status).toBe('paid');
+    expect((await alice.query(api.commerce.ownership, {})).owned).toEqual(['classic']);
+    expect(await t.run(ctx => ctx.db.query('commercePayments').collect())).toHaveLength(1);
+  });
+
+  it('keeps different products separate and rejects request-key reuse for another SKU', async () => {
+    const { alice, order } = await setup('points_100');
+    const retry = await alice.mutation(internal.commerceData.beginCheckout, { sku: 'points_100', requestKey: 'retry-request', intentId: 'retry-intent' });
+    const other = await alice.mutation(internal.commerceData.beginCheckout, { sku: 'points_550', requestKey: 'other-request', intentId: 'other-intent' });
+    expect(retry._id).toBe(order._id);
+    expect(other._id).not.toBe(order._id);
+    expect(other.points).toBe(550);
+    await expect(alice.mutation(internal.commerceData.beginCheckout, { sku: 'points_550', requestKey: 'request-one', intentId: 'mismatched-intent' })).rejects.toThrow('another purchase');
+  });
+
+  it.each(pointPacks)('creates the correct server-priced checkout for $sku', async pack => {
+    const { bob } = await setup();
+    const variant = `plan_points${pack.points}`;
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      if (url.includes('/variants/')) {
+        expect(url).toContain(variant);
+        return Response.json({ id: variant, account: { id: accountId }, billing_type: 'one_time', initial_price: pack.cents / 100, currency: 'usd', tax_type: 'exclusive', adaptive_pricing_enabled: false, allow_multiple_quantity: false });
+      }
+      const body = JSON.parse(init.body as string);
+      expect(body.variant_id).toBe(variant);
+      return Response.json({ ...body, id: 'ch_points', variant: { id: variant, billing_type: 'one_time', initial_price: pack.cents / 100, currency: 'usd', adaptive_pricing_enabled: false }, purchase_url: 'https://sandbox.whop.com/checkout/ch_points/' });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const order = await bob.action(api.commerce.checkout, { sku: pack.sku, requestKey: 'buy-points-request' });
+    expect(order.sku).toBe(pack.sku);
+    expect(order.purchaseUrl).toBe('https://sandbox.whop.com/checkout/ch_points/');
+    expect((await bob.query(api.coop.mine, {})).points).toBe(120);
+  });
+
+  it('does not grant on a wrong price, and prevents paying again while it needs review', async () => {
+    const { t, alice, order } = await setup('points_550');
+    const data = { ...storePayment(order), subtotal: money('1.00'), total: money('1.00') };
+    await deliver(t, event(data));
+    expect((await alice.query(api.coop.mine, {})).points).toBe(120);
+    expect((await alice.query(api.commerce.orders, {}))[0].status).toBe('reconciliation');
+    await expect(alice.action(api.commerce.checkout, { sku: 'points_550', requestKey: 'pay-again-request' })).rejects.toThrow('review');
+  });
+
+  it('reverses points once, retaining debt when points were already spent', async () => {
+    const { t, alice, order } = await setup('points_550');
+    const data = storePayment(order);
+    await deliver(t, event(data));
+    for (let i = 0; i < 24; i++) await alice.mutation(api.coop.transact, { action: { type: 'buyTreat' }, requestKey: `spend-request-${i}` });
+    expect((await alice.query(api.coop.mine, {})).points).toBe(70);
+    const refund = event({ id: 'rf_points', status: 'succeeded', payment: { id: data.id } }, 'msg_pointsrefund', 'refund.created');
+    const refunded = { ...data, refunded_amount: money('5.00'), substatus: 'refunded' };
+    await deliver(t, refund, refunded);
+    await deliver(t, { ...refund, id: 'msg_otherrefund' }, refunded);
+    await deliver(t, event(data, 'msg_stalepoints'));
+    expect((await alice.query(api.coop.mine, {})).points).toBe(-480);
+    expect((await alice.query(api.commerce.orders, {}))[0].status).toBe('refunded');
+  });
+
+  it('never grants points when a reversal arrives before success', async () => {
+    const { t, alice, order } = await setup('points_100');
+    const data = storePayment(order);
+    await deliver(t, event({ id: 'rf_before', status: 'succeeded', payment: { id: data.id } }, 'msg_refundfirst', 'refund.created'), { ...data, refunded_amount: money('1.00'), substatus: 'refunded' });
+    await deliver(t, event(data));
+    expect((await alice.query(api.coop.mine, {})).points).toBe(120);
+    expect((await alice.query(api.commerce.orders, {}))[0].status).toBe('refunded');
+  });
+
+  it('adds one permanent pigeon and revokes only that pigeon after a refund', async () => {
+    const { t, alice, order } = await setup('pigeon');
+    await alice.mutation(api.onboarding.ensureFlock, {});
+    const data = storePayment(order);
+    await deliver(t, event(data));
+    await deliver(t, event(data, 'msg_birdduplicate'));
+    const flock = await alice.query(api.onboarding.flock, {});
+    expect(flock.pigeons).toHaveLength(6);
+    const bird = flock.pigeons[5];
+    await alice.mutation(api.coop.transact, { action: { type: 'accessory', item: 'cap', birdId: bird.id }, requestKey: 'dress-new-pigeon' });
+    expect(order.baseCents).toBe(500);
+    await deliver(t, event({ id: 'rf_bird', status: 'succeeded', payment: { id: data.id } }, 'msg_birdrefund', 'refund.created'), { ...data, refunded_amount: money('5.00'), substatus: 'refunded' });
+    await alice.mutation(api.onboarding.ensureFlock, {});
+    expect((await alice.query(api.onboarding.flock, {})).pigeons).toHaveLength(5);
+    expect((await alice.query(api.coop.mine, {})).equipped.some(entry => entry.birdId === bird.id)).toBe(false);
+    await expect(alice.mutation(api.coop.transact, { action: { type: 'treat', birdId: bird.id }, requestKey: 'treat-revoked-pigeon' })).rejects.toThrow('Choose a pigeon');
+    await deliver(t, event(data, 'msg_birdstalesuccess'));
+    expect((await alice.query(api.onboarding.flock, {})).pigeons).toHaveLength(5);
+  });
+
+  it('reports each product readiness without exposing credentials', async () => {
+    const { t, bob } = await setup();
+    vi.stubEnv('WHOP_SANDBOX_POINTS_550_VARIANT_ID', '');
+    vi.stubEnv('PIGEON_PRICE_CENTS', '');
+    const catalog = await t.query(api.commerce.storefront, {});
+    expect(catalog.products.filter(product => product.configured).map(product => product.sku)).toEqual(['points_100', 'points_1200']);
+    expect(JSON.stringify(catalog)).not.toContain('unit-test-api-key');
+    await expect(bob.action(api.commerce.checkout, { sku: 'points_550', requestKey: 'not-configured-request' })).rejects.toThrow('not configured');
+    expect(await bob.query(api.commerce.orders, {})).toHaveLength(0);
+    vi.stubEnv('WHOP_ENVIRONMENT', 'prod');
+    expect((await t.query(api.commerce.storefront, {})).products.every(product => !product.configured)).toBe(true);
+  });
+
+  it('uses live credentials for live orders and preserves the event environment across a mode switch', async () => {
+    for (const [name, value] of Object.entries(testEnvironment)) if (name.startsWith('WHOP_SANDBOX_')) vi.stubEnv(name.replace('SANDBOX', 'LIVE'), value);
+    vi.stubEnv('WHOP_LIVE_API_KEY', 'live-test-key');
+    vi.stubEnv('WHOP_LIVE_WEBHOOK_SECRET', 'ws_live_test_secret');
+    vi.stubEnv('WHOP_ENVIRONMENT', 'production');
+    const { t, alice, order } = await setup('points_100');
+    const data = storePayment(order);
+    const request = signed(event(data), 'ws_live_test_secret');
+    expect((await t.fetch('/webhooks/whop/sandbox', { method: 'POST', ...request })).status).toBe(401);
+    expect((await t.fetch('/webhooks/whop/production', { method: 'POST', ...request })).status).toBe(200);
+    vi.stubEnv('WHOP_ENVIRONMENT', 'sandbox');
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      expect(url).toBe('https://api.whop.com/api/v1/payments/pay_testpayment');
+      expect((init.headers as Record<string, string>).Authorization).toBe('Bearer live-test-key');
+      return Response.json(data);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect((await alice.query(api.coop.mine, {})).points).toBe(220);
+    expect(await alice.query(api.commerce.orders, {})).toHaveLength(0);
+    vi.stubEnv('WHOP_ENVIRONMENT', 'production');
+    expect((await alice.query(api.commerce.orders, {}))[0].status).toBe('paid');
   });
 });
 
@@ -319,7 +472,7 @@ describe('verified durable fulfillment', () => {
     await t.finishAllScheduledFunctions(vi.runAllTimers);
     expect(fetchMock).toHaveBeenCalledTimes(5);
     expect((await alice.query(api.commerce.ownership, {})).owned).toEqual(['classic']);
-    expect((await t.run(async (ctx) => await ctx.db.query('commerceEvents').take(10)))[0]).toMatchObject({ state: 'reconciliation', reason: 'sandbox_payment_lookup_failed' });
+    expect((await t.run(async (ctx) => await ctx.db.query('commerceEvents').take(10)))[0]).toMatchObject({ state: 'reconciliation', reason: 'payment_lookup_failed' });
   });
 
   it('reconciles unknown accounts and wrong API versions before any outbound request', async () => {

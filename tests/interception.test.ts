@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { cityById, type FlightSummary } from '../src/domain';
-import { advanceGame, beginAim, cancelAim, canIntercept, constrainPull, createGame, gameDeadline, moveAim, releaseShot } from '../src/interception';
+import { advanceGame, beginAim, cancelAim, canIntercept, constrainPull, createGame, gameDeadline, moveAim, pigeonPosition, releaseShot, shotsRemaining } from '../src/interception';
 
 const shoot = (game = createGame(0, 6), at = 100, pull = { x: 0.2, y: 0.04 }) => releaseShot(moveAim(beginAim(game, at), pull), at);
 const flight: FlightSummary = { id: 'stranger', courier: 'Wren', origin: cityById('london'), destination: cityById('new-york'), role: 'public', visibility: 'open', state: 'in_flight', defense: 'cruise', outfit: 'classic', demo: true, attemptCount: 0, distanceKm: 100, departedAt: 0, arrivesAt: 100_000 };
 
-describe('two-shot slingshot', () => {
+describe('slingshot interception', () => {
   it('spends exactly one stone on release, never on aim, cancel, tap, or duplicate release', () => {
     const aiming = beginAim(createGame(0, 6), 100);
     expect(aiming.stones).toBe(6);
@@ -17,23 +17,46 @@ describe('two-shot slingshot', () => {
     expect(beginAim(shot, 150).phase).toBe('flight');
   });
 
-  it('gives a missed first shot one more try and ends after two misses', () => {
+  it('ends after two misses and preserves the other stones in the pouch', () => {
     const missed = advanceGame(shoot(), 2000);
     expect(missed).toMatchObject({ phase: 'miss', shots: 1, stones: 5 });
     const second = shoot(missed, 2200);
     const twice = advanceGame(second, 4100);
-    const escaped = advanceGame(twice, 5000);
-    expect(escaped).toMatchObject({ phase: 'escaped', escapeReason: 'shots', shots: 2, stones: 4 });
-    expect(shoot(escaped, 5100)).toBe(escaped);
+    expect(twice).toMatchObject({ phase: 'miss', shots: 2, stones: 4 });
+    expect(shotsRemaining(twice)).toBe(0);
+    // The brief miss feedback must not allow a third shot either.
+    expect(shoot(twice, 4200)).toMatchObject({ phase: 'miss', shots: 2, stones: 4 });
+    const retry = advanceGame(twice, 5000);
+    expect(retry).toMatchObject({ phase: 'escaped', escapeReason: 'shots', shots: 2, stones: 4 });
+    expect(shoot(retry, 5100)).toBe(retry);
+    expect(gameDeadline(second)).toBe(gameDeadline(missed));
   });
 
   it('catches a moving target along the path even when rendering drops frames', () => {
-    // At 2.5 seconds, a full straight pull crosses the pigeon on its return pass.
-    const shot = shoot(createGame(0, 6), 2500, { x: 0, y: 0.18 });
-    const result = advanceGame(shot, 4000);
+    // Lead the faster pigeon into the center on its return pass.
+    const shot = shoot(createGame(0, 6), 1600, { x: 0, y: 0.18 });
+    const result = advanceGame(shot, 3400);
     expect(result.phase).toBe('caught');
     expect(result.shots).toBe(1);
     expect(advanceGame(result, 90_000)).toBe(result);
+  });
+
+  it('lets the final shot finish and catch before declaring an escape', () => {
+    const missed = advanceGame(shoot(), 2000);
+    const second = shoot(missed, 2900, { x: 0, y: 0.18 });
+    expect(second).toMatchObject({ phase: 'flight', shots: 2, stones: 4 });
+    expect(advanceGame(second, 4700)).toMatchObject({ phase: 'caught', shots: 2, stones: 4 });
+  });
+
+  it('crosses most of the arena in under a second while staying within reach', () => {
+    expect(pigeonPosition(400).x - pigeonPosition(1400).x).toBeGreaterThan(0.55);
+    for (let at = 0; at < 28_000; at += 16) {
+      const position = pigeonPosition(at);
+      expect(position.x).toBeGreaterThanOrEqual(0.17);
+      expect(position.x).toBeLessThanOrEqual(0.83);
+      expect(position.y).toBeGreaterThanOrEqual(0.12);
+      expect(position.y).toBeLessThanOrEqual(0.24);
+    }
   });
 
   it('uses the 28-second sky window and a 10-second clock from the first pull', () => {
@@ -49,7 +72,7 @@ describe('two-shot slingshot', () => {
   });
 
   it('does not catch or spend a stone from a stale backgrounded gesture', () => {
-    const shot = shoot(createGame(0, 6), 2500, { x: 0, y: 0.18 });
+    const shot = shoot(createGame(0, 6), 2000, { x: 0, y: 0.18 });
     expect(advanceGame(shot, 30_000).phase).toBe('escaped');
     expect(releaseShot(moveAim(beginAim(createGame(0, 6), 100), { x: 0, y: 0.2 }), 30_000).stones).toBe(6);
   });

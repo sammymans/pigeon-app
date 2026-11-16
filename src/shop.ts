@@ -22,10 +22,14 @@ export const GUARD_PRICE = 40;
 export const STONE_PRICE = 50;
 export const STONE_INTERVAL = 15 * 60 * 1000;
 export const pointPacks = [
-  { points: 100, price: '$1', note: 'A little top-up' },
-  { points: 550, price: '$5', note: '500 + 50 bonus points' },
-  { points: 1200, price: '$10', note: '1,000 + 200 bonus points' },
+  { sku: 'points_100', points: 100, cents: 100, price: '$1', note: 'A little top-up' },
+  { sku: 'points_550', points: 550, cents: 500, price: '$5', note: '500 + 50 bonus points' },
+  { sku: 'points_1200', points: 1200, cents: 1000, price: '$10', note: '1,000 + 200 bonus points' },
 ] as const;
+export type PointPackSku = typeof pointPacks[number]['sku'];
+export type StoreSku = PointPackSku | 'pigeon';
+export type CommerceSku = StoreSku | 'aviator';
+export type StoreProduct = { sku: StoreSku; title: string; points: number; cents: number; configured: boolean };
 
 export function initialShop(now: number, firstBird?: string): ShopState {
   return { points: 120, stones: 5, stoneAt: now, owned: ['cap', 'goggles'], equipped: firstBird ? [{ item: 'cap', birdId: firstBird }] : [], treats: 1, treatedBirds: [], guardUntil: 0 };

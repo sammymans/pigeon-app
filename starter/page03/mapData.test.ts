@@ -39,6 +39,15 @@ describe('geographic flight routes', () => {
     expect(first.markers[0].coordinate).not.toEqual(later.markers[0].coordinate);
   });
 
+  it('frames every route in the overview and keeps that framing stable as pigeons move', () => {
+    const flights = sampleFlights(1000);
+    const overview = skyMapData(flights, null, 1000);
+    expect(overview.focusCoordinates).toEqual(overview.routes.flatMap(route => route.coordinates));
+    expect(overview.routes.every(route => !route.selected)).toBe(true);
+    expect(overview.focusKey).toBe(skyMapData(flights, null, 2000).focusKey);
+    expect(overview.focusKey).not.toBe(skyMapData(flights.slice(1), null, 1000).focusKey);
+  });
+
   it('does not invent flights when given an empty sky', () => {
     const data = skyMapData([], null, null);
     expect(data.routes).toEqual([]);

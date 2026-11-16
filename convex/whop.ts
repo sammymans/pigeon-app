@@ -6,6 +6,7 @@ export const whopWebhook = httpAction(async (ctx, request) => {
   const body = await request.text();
   if (new TextEncoder().encode(body).length > 262144) return new Response('Payload too large', { status: 413 });
   const result: { status: number } = await ctx.runAction(internal.whopNode.receive, {
+    ...(new URL(request.url).pathname.endsWith('/sandbox') ? { environment: 'sandbox' as const } : new URL(request.url).pathname.endsWith('/production') ? { environment: 'production' as const } : {}),
     body, headers: {
       'webhook-id': request.headers.get('webhook-id') ?? '',
       'webhook-timestamp': request.headers.get('webhook-timestamp') ?? '',

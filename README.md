@@ -6,7 +6,7 @@ Set `EXPO_PUBLIC_ONBOARDING_PREVIEW=false` to restore connected phone sign-in an
 
 The local map design preview is preserved. Run `EXPO_PUBLIC_DESIGN_PREVIEW=true npm --prefix starter start` to explore sample birds and flights without an account. Sample sends stay local and reset on reload. See [the preview workflow](starter/README.md#current-local-design-preview).
 
-The **Coop shop** now includes accessory previews and transfers, point purchases, treats, flock protection, and stone refills. The signed-in implementation stores inventory in Convex; the preview uses local sample points. Cash top-ups and additional-pigeon checkout remain unavailable. See [shop behavior and setup](starter/README.md#coop-shop).
+The **Coop shop** includes accessories, treats, flock protection, stone refills, and Whop checkout for point packs. Verified payments credit the signed-in player's Convex wallet; additional-pigeon checkout also works once its price and variant are configured. The preview uses local sample points. See [Whop credentials and deployment setup](docs/whop-store.md) and [shop behavior](starter/README.md#coop-shop).
 
 An Expo Go-compatible, two-person sealed-letter demo: pair two real anonymous sessions, compose, wait for server-confirmed delivery, read, and send a new timed reply. Demo travel is explicitly labeled 30–90 seconds alongside the normal distance estimate. The public counter remains available through **Connection diagnostic**.
 

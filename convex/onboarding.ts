@@ -39,7 +39,7 @@ async function completeStatus(ctx: QueryCtx, profile: Doc<'profiles'>) {
   const pigeons = await ctx.db.query('pigeons').withIndex('by_ownerId', q => q.eq('ownerId', profile._id)).collect();
   return {
     status: 'complete' as const, accountId: profile.userId, username: profile.handle, displayName: profile.displayName,
-    pigeons: pigeons.sort((a, b) => a.slot - b.slot).map(pigeon => ({ id: pigeon._id, name: pigeon.name })),
+    pigeons: pigeons.filter(pigeon => !pigeon.commerceRevoked).sort((a, b) => a.slot - b.slot).map(pigeon => ({ id: pigeon._id, name: pigeon.name })),
   };
 }
 

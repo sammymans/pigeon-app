@@ -70,7 +70,7 @@ export async function launchFor(ctx: MutationCtx, sender: Doc<'profiles'>, input
   if (count >= 3) throw new ConvexError('Three pigeons are already flying. Wait for one to arrive.');
   const pigeonId = input.pigeonId ? ctx.db.normalizeId('pigeons', input.pigeonId) : null;
   const pigeon = pigeonId ? await ctx.db.get('pigeons', pigeonId) : null;
-  if (input.pigeonId !== undefined && (!pigeon || pigeon.ownerId !== sender._id)) throw new ConvexError('Choose a pigeon from your own flock.');
+  if (input.pigeonId !== undefined && (!pigeon || pigeon.commerceRevoked || pigeon.ownerId !== sender._id)) throw new ConvexError('Choose a pigeon from your own flock.');
   if (!sender.cityId || !recipient.cityId) throw new ConvexError('Both people must choose a city before sending a letter.');
   const origin = cityById(sender.cityId);
   const destination = cityById(recipient.cityId);

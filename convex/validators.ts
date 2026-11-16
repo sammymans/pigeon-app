@@ -1,6 +1,6 @@
 import { v } from 'convex/values';
 
-export const cityId = v.union(v.literal('san-francisco'), v.literal('los-angeles'), v.literal('new-york'), v.literal('chicago'), v.literal('london'), v.literal('paris'), v.literal('berlin'), v.literal('tokyo'), v.literal('seoul'), v.literal('singapore'), v.literal('sydney'), v.literal('sao-paulo'));
+export const cityId = v.union(v.literal('san-francisco'), v.literal('vancouver'), v.literal('los-angeles'), v.literal('new-york'), v.literal('chicago'), v.literal('london'), v.literal('paris'), v.literal('berlin'), v.literal('tokyo'), v.literal('seoul'), v.literal('singapore'), v.literal('sydney'), v.literal('sao-paulo'));
 export const city = v.object({ id: cityId, name: v.string(), country: v.string(), lat: v.number(), lng: v.number() });
 export const outfit = v.union(v.literal('classic'), v.literal('aviator'));
 export const visibility = v.union(v.literal('sealed'), v.literal('open'));

@@ -11,7 +11,7 @@ export function validCoordinate(point: Coordinate) {
     && Math.abs(point.latitude) <= 90 && Math.abs(point.longitude) <= 180;
 }
 
-// A geodesic offset keeps the mock inside the same radius at any latitude.
+// Geodesic offsets keep routes consistent at any latitude.
 export function offsetCoordinate(center: Coordinate, km: number, bearingDegrees: number): Coordinate {
   const radians = Math.PI / 180;
   const angularDistance = km / 6371;
@@ -24,15 +24,21 @@ export function offsetCoordinate(center: Coordinate, km: number, bearingDegrees:
 }
 
 export function nearbyPigeons(center: Coordinate, now: number, serial = 0): FlightSummary[] {
-  return ['Scout', 'Fern', 'Sunny'].map((courier, index) => {
-    const start = offsetCoordinate(center, 2.1, 25 + index * 120);
-    const end = offsetCoordinate(center, 2.4, 110 + index * 120);
+  const passages = [
+    { courier: 'Scout', km: 1.4, bearing: 292, heading: 62, before: 18, after: 34, from: 'Westbrook', to: 'East Bay' },
+    { courier: 'Fern', km: 3.2, bearing: 24, heading: 148, before: 42, after: 23, from: 'Cedar Grove', to: 'South Point' },
+    { courier: 'Sunny', km: 2.7, bearing: 157, heading: 256, before: 12, after: 57, from: 'River Park', to: 'Hillside' },
+  ];
+  return passages.map(({ courier, km, bearing, heading, before, after, from, to }) => {
+    const passage = offsetCoordinate(center, km, bearing + serial * 11);
+    const start = offsetCoordinate(passage, before, heading + 180);
+    const end = offsetCoordinate(passage, after, heading);
     const city = cityById('new-york');
-    const origin = { ...city, name: 'Nearby rooftops', lat: start.latitude, lng: start.longitude };
-    const destination = { ...city, name: 'Across the neighborhood', lat: end.latitude, lng: end.longitude };
+    const origin = { ...city, name: from, lat: start.latitude, lng: start.longitude };
+    const destination = { ...city, name: to, lat: end.latitude, lng: end.longitude };
     return { id: `${MOCK_PREFIX}${courier.toLowerCase()}-${serial}`, courier, origin, destination,
       role: 'public', visibility: 'open', state: 'in_flight', defense: 'cruise', outfit: 'classic', demo: true,
-      attemptCount: 0, distanceKm: distanceKm(origin, destination), departedAt: now - 30 * 60_000, arrivesAt: now + 60 * 60_000 };
+      attemptCount: 0, distanceKm: distanceKm(origin, destination), departedAt: now - before * 60_000, arrivesAt: now + after * 60_000 };
   });
 }
 
@@ -40,5 +46,5 @@ export function focusNearby(map: SkyMapData, center: Coordinate, locationKnown: 
   return { ...map, focusKey: `nearby:${map.focusKey}:${center.latitude}:${center.longitude}`,
     focusCoordinates: [0, 90, 180, 270].map(bearing => offsetCoordinate(center, NEARBY_RADIUS_KM, bearing)),
     nearby: { center, radiusKm: NEARBY_RADIUS_KM, locationKnown },
-    markers: map.markers.map(marker => isNearbyMock(marker.id) ? { ...marker, label: `${marker.label.split(',')[0]}, mock pigeon within 5 km. Tap to intercept.` } : marker) };
+    markers: map.markers.map(marker => isNearbyMock(marker.id) ? { ...marker, label: `${marker.label.split(',')[0]}, nearby pigeon. Tap to intercept.` } : marker) };
 }
