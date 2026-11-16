@@ -2,6 +2,8 @@
 
 A phone-sized, Expo Go-compatible frontend for the first sealed-letter slice. It loads no old product routes, Rive, commerce, catching, or custom native modules. `docs/first-letter-contract.md` defines the original implementation contract; the coordinated cloud deployment/preview is now authorized and verified as described in the root README.
 
+The main screen uses native Apple/Google maps through the Expo Go-supported `react-native-maps`. It supports geographic pan/zoom, city flight paths, marker selection and a separate scrollable flight sheet. Web uses an explicit flight-list fallback. See [map provider and setup](../docs/map-provider.md) for the tradeoffs and standalone Android key requirements.
+
 ## Configuration and verification
 
 Set `EXPO_PUBLIC_CONVEX_URL` explicitly to the approved isolated Convex backend before starting or exporting Expo. There is no default live target. Missing configuration shows a setup screen and performs no account or letter operations. Do not repoint or publish over the existing counter preview.

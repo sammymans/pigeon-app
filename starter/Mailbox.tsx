@@ -1,51 +1,158 @@
-import { useMutation, useQuery } from 'convex/react';
-import { useState } from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { useConvex, useMutation, useQuery } from 'convex/react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, Text, View } from 'react-native';
 import { api } from '../convex/_generated/api';
 import { cityById, durationSeconds, formatDuration, OPEN_SKIES_DISCLOSURE, type FlightSummary, type Profile } from '../src/domain';
 import { useServerClock } from './useServerClock';
-import { acceptedFriends, codepoints, exactTime, flightStatus, readableBody, routeEstimate, validDraft } from './letterModel';
+import { acceptedFriends, exactTime, flightStatus, readableBody } from './letterModel';
 import { useDraft } from './useDraft';
-import { PaperPigeon } from './PaperPigeon';
-import { matchingFriends, visibleFlights } from './presentation';
-import { Button, Envelope, Field, Link, Loading, Notice, PostalCard, ScreenHeader, colors, s } from './ui';
-import { Pigeon } from './Pigeon';
+import { Compose } from './Compose';
+import { randomUUID } from 'expo-crypto';
+import { Shop } from './shop/Shop';
+import { createConvexShopGateway } from './shop/convexGateway';
+import type { ShopEntry, ShopExit } from '../src/shop';
+import { visibleFlights } from './presentation';
+import { Button, Envelope, Loading, Notice, PostalCard, ScreenHeader, s } from './ui';
 import { a, PageFrame, usePageInsets } from './page03/atoms';
-import { HomeSheet, MapScreen } from './page03/MapScreen';
-import { skyMapData } from './page03/mapData';
+import { FlockSheet, MapScreen, SentSheet } from './page03/MapScreen';
 
-type Page = { screen: 'postbox' } | { screen: 'compose'; reply?: boolean } | { screen: 'detail'; id: string; sent?: boolean };
-type DraftController = ReturnType<typeof useDraft>;
+type Page = { screen: 'postbox' } | { screen: 'compose'; reply?: boolean } | { screen: 'detail' | 'sent'; id: string };
 
-export function Mailbox({ profile, deployment, connected, initialCompose = false, onCatch, onReturn, onNavigate, onMenu }: { profile: Profile; deployment: string; connected: boolean; initialCompose?: boolean; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void; onNavigate: () => void; onMenu?: () => void }) {
+export function Mailbox({ profile, deployment, connected, initialCompose = false, openFlightId, onOpenFlightHandled, onCatch, onReturn, onNavigate, onMenu }: { profile: Profile; deployment: string; connected: boolean; initialCompose?: boolean; openFlightId?: string; onOpenFlightHandled?: () => void; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void; onNavigate: () => void; onMenu?: () => void }) {
+  const client = useConvex();
+  const shopGateway = useMemo(() => createConvexShopGateway(client, profile.id), [client, profile.id]);
   const connections = useQuery(api.social.list, {});
-  const account = useQuery(api.onboarding.status, profile.demo ? 'skip' : {});
   const flights = useQuery(api.flights.list, { scope: 'mine', demo: profile.demo });
   const pair = useQuery(api.starterPair.status, profile.demo ? {} : 'skip');
+  const pigeons = useQuery(api.flock.list, {});
+  const ensureFlock = useMutation(api.onboarding.ensureFlock);
   const launch = useMutation(api.flights.launch);
+  const setCity = useMutation(api.profiles.setCity);
   const clock = useServerClock(connected);
-  const draft: DraftController = useDraft(deployment, profile.id, profile.demo);
+  const draft = useDraft(deployment, profile.id, profile.demo);
   const friends = acceptedFriends(connections ?? []);
   const [page, setPage] = useState<Page>({ screen: initialCompose ? 'compose' : 'postbox' });
   const [scope, setScope] = useState<'mine' | 'world'>('mine');
   const [tab, setTab] = useState<'recipient' | 'sender' | 'catcher'>('recipient');
   const [selected, setSelected] = useState<string | null>(null);
   const [replyTarget, setReplyTarget] = useState<string | null>(null);
+  const [replying, setReplying] = useState(false);
   const [inbox, setInbox] = useState(false);
   const [flock, setFlock] = useState(false);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [flockError, setFlockError] = useState('');
+  const [shop, setShop] = useState<{ key: string; entry: ShopEntry } | null>(null);
+  const [shopError, setShopError] = useState('');
+  const activeShop = useRef<string | null>(null);
+  const shopState = useRef({ draft, pigeons, connected });
+  shopState.current = { draft, pigeons, connected };
+  useEffect(() => () => { activeShop.current = null; }, []);
   const insets = usePageInsets();
   const world = useQuery(api.flights.list, scope === 'world' ? { scope: 'world', demo: profile.demo } : 'skip');
+  const sentResult = useQuery(api.flights.detail, page.screen === 'sent' ? { id: page.id } : 'skip');
   const mapFlights = visibleFlights((scope === 'mine' ? flights : world)?.flights ?? [], scope);
-  const selectedFlight = mapFlights.find((flight) => flight.id === selected) ?? mapFlights[0];
+  const selectedBird = pigeons?.find(bird => bird.id === (picked ?? draft.draft?.pigeonId)) ?? pigeons?.find(bird => bird.ready) ?? pigeons?.[0];
+  const draftBird = pigeons?.find(bird => bird.id === draft.draft?.pigeonId);
+
+  const handledFlight = useRef<string | undefined>(undefined);
+  const composeEntry = useRef(initialCompose);
+  const entryBirdChosen = useRef(false);
+  useEffect(() => {
+    if (!connected) return;
+    let active = true;
+    void ensureFlock({}).then(() => { if (active) setFlockError(''); }).catch(() => { if (active) setFlockError('Your flock could not be loaded. Reconnect and retry.'); });
+    return () => { active = false; };
+  }, [connected, ensureFlock]);
+  useEffect(() => {
+    if (!openFlightId) { handledFlight.current = undefined; return; }
+    if (handledFlight.current === openFlightId || draft.busy) return;
+    handledFlight.current = openFlightId;
+    setInbox(false);
+    setScope('mine');
+    setFlock(false);
+    setSelected(openFlightId);
+    setPage({ screen: 'detail', id: openFlightId });
+    onOpenFlightHandled?.();
+  }, [openFlightId, draft.busy, onOpenFlightHandled]);
+
+  useEffect(() => {
+    if (!composeEntry.current || openFlightId || page.screen !== 'compose' || entryBirdChosen.current || !draft.draft || !pigeons?.length) return;
+    entryBirdChosen.current = true;
+    if (!draft.locked && !draft.draft.pigeonId) {
+      const first = pigeons.find(bird => bird.name === 'Mochi') ?? pigeons[0];
+      if (first) draft.edit({ pigeonId: first.id });
+    }
+  }, [initialCompose, openFlightId, page.screen, draft.draft, draft.locked, pigeons, draft.edit]);
+
+  function openShop(from: 'home' | 'shop' | 'compose' | 'sky') {
+    if (draft.busy) return;
+    const key = randomUUID();
+    const selectedBirdId = from === 'compose' ? draft.draft?.pigeonId : selectedBird?.id;
+    const entry: ShopEntry = from === 'compose' ? { from, draftKey: key, selectedBirdId } : from === 'sky' ? { from } : { from, selectedBirdId };
+    activeShop.current = key;
+    setShopError('');
+    setShop({ key, entry });
+  }
+
+  function closeShop(key: string, exit: ShopExit) {
+    if (activeShop.current !== key || !shop || shop.key !== key) return;
+    activeShop.current = null;
+    setShop(null);
+    const current = shopState.current;
+    if (exit.to === 'compose') {
+      if (shop.entry.from === 'compose' && exit.draftKey !== key) return;
+      if (exit.confirmed) {
+        const bird = current.pigeons?.find(bird => bird.id === exit.selectedBirdId && bird.ready);
+        if (!bird || !current.connected || !current.draft.draft || current.draft.locked || current.draft.busy) {
+          setShopError('Your pigeon choice could not be confirmed. Your saved letter is unchanged.');
+          return;
+        }
+        if (current.draft.draft.pigeonId !== bird.id) current.draft.edit({ pigeonId: bird.id });
+        setPicked(bird.id);
+      }
+      go({ screen: 'compose', reply: replying });
+    } else if (exit.to === 'sky') {
+      setInbox(false); setFlock(false); setScope('world'); go({ screen: 'postbox' });
+    } else home();
+  }
 
   function go(next: Page) {
     setPage(next);
     onNavigate();
   }
 
+  function home() {
+    setInbox(false);
+    setScope('mine');
+    setFlock(false);
+    setReplying(false);
+    go({ screen: 'postbox' });
+  }
+
+  function chooseBird() {
+    setInbox(false);
+    setScope('mine');
+    setFlock(true);
+    go({ screen: 'postbox' });
+  }
+
+  function beginSend() {
+    setReplyTarget(null);
+    setReplying(false);
+    if (draft.locked) go({ screen: 'compose' });
+    else chooseBird();
+  }
+
   async function send() {
-    const id = await draft.send((input) => launch(input));
-    if (id) { setReplyTarget(null); go({ screen: 'detail', id, sent: true }); }
+    const id = await draft.send(input => launch(input));
+    if (id) {
+      setReplyTarget(null);
+      setSelected(id);
+      setInbox(false);
+      setScope('mine');
+      setFlock(false);
+      go({ screen: 'sent', id });
+    }
   }
 
   function reply(recipientId: string) {
@@ -53,45 +160,72 @@ export function Mailbox({ profile, deployment, connected, initialCompose = false
       draft.startReply(recipientId);
       setReplyTarget(null);
     } else setReplyTarget(recipientId);
-    go({ screen: 'compose', reply: true });
+    setReplying(true);
+    setPicked(null);
+    if (draft.locked) go({ screen: 'compose', reply: true });
+    else chooseBird();
   }
 
-  const mine = flights?.flights.filter((flight) => flight.role === tab);
-  const outgoing = flights?.flights.filter((flight) => flight.role === 'sender' && flight.state === 'in_flight').length ?? 0;
-  const incoming = flights?.flights.filter((flight) => flight.role === 'recipient' && flight.state === 'in_flight').length ?? 0;
+  const mine = flights?.flights.filter(flight => flight.role === tab);
+  const outgoing = flights?.flights.filter(flight => flight.role === 'sender' && flight.state === 'in_flight').length ?? 0;
 
-  if (page.screen === 'postbox' && !inbox) return <MapScreen map={skyMapData(mapFlights, selectedFlight?.id ?? null, clock.serverNow)} scope={scope} onScope={(value) => { setScope(value); setSelected(null); setFlock(false); }} onMenu={onMenu} onInbox={() => setInbox(true)} onSelect={(id) => { setSelected(id); if (scope === 'mine') go({ screen: 'detail', id }); }}>
-    {flock ? <View style={[a.sheet, { paddingBottom: insets.bottom, gap: 16 }]}><Text style={a.heading}>Your flock</Text><View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>{account?.pigeons.map(bird => <View key={bird.id} style={{ alignItems: 'center' }}><Pigeon name={bird.name} size={56} /><Text style={a.small}>{bird.name}</Text></View>)}</View>{!account?.pigeons.length && <Text style={a.small}>No starter flock is attached to this legacy account.</Text>}<Button label={account?.pigeons.length ? "Send with Mochi" : "Send a pigeon"} onPress={() => { setFlock(false); go({ screen: 'compose' }); }} /><Link label="Back to sky" onPress={() => setFlock(false)} /></View> : scope === 'world' ? <View style={[a.sheet, { paddingBottom: insets.bottom + 12, gap: 12 }]}><WorldSelection id={selectedFlight?.id ?? null} connected={connected} onCatch={onCatch} /></View> : <HomeSheet title={flights === undefined ? 'Finding your flights…' : outgoing + incoming ? `${outgoing + incoming} ${outgoing + incoming === 1 ? 'flight' : 'flights'} in your sky` : 'Your sky is quiet'} subtitle={`${outgoing} sent · ${incoming} on its way to you`} ready="Your flock" onExpand={() => setFlock(true)} action={draft.locked ? 'Resolve saved send' : draft.draft?.body ? 'Continue your letter' : 'Send a pigeon'} onSend={() => { setReplyTarget(null); go({ screen: 'compose' }); }} disabled={connections === undefined} notice={!connected || clock.syncError ? <Text style={a.small}>Reconnecting. Status and sending wait for the server.</Text> : undefined} />}
+  if (shop) return <Shop key={shop.key} entry={shop.entry} gateway={shopGateway} onExit={exit => closeShop(shop.key, exit)} />;
+
+  if (page.screen === 'compose') return <Compose notice={shopError} profile={profile} friends={friends} friendsLoading={connections === undefined} pigeon={draftBird} controller={draft} connected={connected} replying={Boolean(page.reply)} replyTarget={replyTarget} onBack={home} onChoosePigeon={() => openShop('compose')} onKeep={() => setReplyTarget(null)} onReplace={() => { if (replyTarget) { draft.startReply(replyTarget); if (draftBird) draft.edit({ pigeonId: draftBird.id }); } setReplyTarget(null); }} onSend={() => void send()} onSetCity={cityId => setCity({ cityId })} />;
+
+  if (page.screen === 'sent') {
+    const flight = sentResult?.flight;
+    const sentFlights = flight ? [flight, ...(flights?.flights ?? []).filter(item => item.id !== flight.id)] : flights?.flights ?? [];
+    return <MapScreen flights={sentFlights} selected={page.id} serverNow={clock.serverNow} scope="mine" onSelect={setSelected} onScope={value => { home(); setScope(value); }} onMenu={onMenu} onCoop={() => openShop('home')} onInbox={() => { home(); setInbox(true); }} onOpenLetter={id => go({ screen: 'detail', id })} onSend={beginSend} connected={connected} clockError={clock.syncError}>
+      {flight ? <SentSheet embedded pigeon={flight.courier} state={flight.state} to={`To ${flight.recipientHandle ?? 'your friend'} · ${flight.destination.name}`} estimate={flight.state === 'in_flight' ? clock.serverNow === null ? 'Syncing ETA…' : clock.serverNow >= flight.arrivesAt ? 'Confirming arrival…' : `~${formatDuration((flight.arrivesAt - clock.serverNow) / 1000)}` : flight.state === 'delivered' ? 'Delivered' : 'Intercepted'} explanation={flight.state === 'in_flight' ? `${flight.demo ? 'Demo speed. ' : ''}Their message stays closed until delivery. ${flight.courier} stays in your flock and becomes ready when this flight ends.` : flight.state === 'delivered' ? 'The server confirmed delivery. Your pigeon is ready for another letter. Replies take a new flight.' : 'This Open Skies letter was caught and did not reach its recipient. Your pigeon is ready again.'} onHome={home} /> : <View style={[a.sheet, { position: 'relative', paddingBottom: insets.bottom, gap: 16 }]}>{sentResult === undefined ? <Loading label="Loading your confirmed flight…" /> : <Notice>This flight is no longer available to this account.</Notice>}<Button label="Back to my flights" onPress={home} /></View>}
+    </MapScreen>;
+  }
+
+  if (page.screen === 'postbox' && !inbox) return <MapScreen
+    flights={mapFlights} selected={selected} serverNow={clock.serverNow} scope={scope}
+    onScope={value => { setScope(value); setSelected(null); setFlock(false); }}
+    onSelect={id => { setSelected(id); if (id) setFlock(false); }}
+    onOpenLetter={id => go({ screen: 'detail', id })}
+    onMenu={onMenu} onCoop={() => openShop('home')} onInbox={() => setInbox(true)} onFlock={chooseBird}
+    loading={(scope === 'mine' ? flights : world) === undefined}
+    connected={connected} clockError={clock.syncError}
+    action={draft.locked ? 'Resolve saved send' : draft.draft?.body ? 'Continue your letter' : 'Send a pigeon'}
+    onSend={beginSend} sendDisabled={connections === undefined}
+    notice={<>
+      {shopError && <Notice error>{shopError}</Notice>}
+      {!draft.draft && draft.error && <><Notice error>{draft.error}</Notice><Button label="Retry loading draft" secondary onPress={draft.retryStorage} /></>}
+      {scope === 'world' && selected && <WorldSelection id={selected} connected={connected} onCatch={onCatch} onShop={() => openShop('sky')} />}
+    </>}
+  >
+    {flock ? <FlockSheet embedded onShop={() => openShop('shop')} birds={(pigeons ?? []).map((bird, index) => ({ id: bird.id, name: bird.name, status: bird.ready ? 'Ready' : 'Flying', color: bird.ready ? ['#2453FF', '#7290DF', '#526AC3'][index % 3] : '#CBD6E4', speed: profile.demo ? 'Demo speed' : '60 km/h', deliveries: `${bird.deliveries} deliveries`, defense: 'No defense' }))} selected={selectedBird?.id ?? null} summary={pigeons !== undefined ? `${pigeons.filter(bird => bird.ready).length} ready · ${pigeons.length} slots` : 'Loading your flock…'} unavailable={pigeons === undefined ? 'Loading your account’s pigeons…' : 'No owned pigeons. Complete account setup to prepare your flock.'} onSelect={setPicked} onClose={() => setFlock(false)} onSend={selectedBird?.ready && connected && draft.draft && !draft.locked && outgoing < 3 ? () => { draft.edit({ pigeonId: selectedBird.id }); setFlock(false); go({ screen: 'compose', reply: replying }); } : undefined} notice={<>{!draft.draft && draft.error && <><Notice error>{draft.error}</Notice><Button label="Retry loading draft" secondary onPress={draft.retryStorage} /></>}{flockError ? <><Notice error>{flockError}</Notice><Button label="Retry loading flock" secondary disabled={!connected} onPress={() => { setFlockError(''); void ensureFlock({}).catch(() => setFlockError('Your flock could not be loaded. Reconnect and retry.')); }} /></> : draft.locked ? <Button label="Resolve saved send" onPress={() => go({ screen: 'compose' })} /> : outgoing >= 3 ? <Text style={a.small}>Three pigeons are already flying. Wait for one to arrive before sending another.</Text> : !connected ? <Text style={a.small}>Reconnect to confirm which pigeons are ready.</Text> : selectedBird && !selectedBird.ready ? <Text style={a.small}>This pigeon is flying. Choose a ready pigeon or wait for the server to confirm arrival.</Text> : undefined}</>} /> : null}
   </MapScreen>;
 
   return <PageFrame scroll style={{ paddingTop: insets.top, paddingBottom: insets.bottom, paddingHorizontal: 24, gap: 20 }}>
     {clock.syncError && <Notice>The server clock or delivery refresh could not be confirmed. Status will update after reconnection; the countdown cannot unlock a letter.</Notice>}
     {page.screen === 'postbox' ? <>
-      <ScreenHeader title="Your postbox" onBack={() => setInbox(false)} />
-      {scope === 'mine' && <>
-        {connections !== undefined && friends.length === 0 && <Text style={s.small}>{profile.demo && pair ? 'Your partner will appear after accepting the invitation.' : 'No accepted friends yet. Only your existing accepted connections appear here.'}</Text>}
-        {profile.demo && pair === undefined ? <Loading label="Checking your pair…" /> : pair && !pair.partner ? <Invitation token={pair.inviteToken} expiresAt={pair.expiresAt} serverNow={clock.serverNow} /> : pair?.partner ? <Text style={s.small}>@{profile.handle} · {(profile.cityId ? cityById(profile.cityId).name : 'Choose your city')}{'\n'}Paired with @{pair.partner.handle} · {(pair.partner.cityId ? cityById(pair.partner.cityId).name : 'City not chosen')}</Text> : null}
-        {draft.error && <Notice error>{draft.error}</Notice>}
-        <View style={s.between}><Text accessibilityRole="header" style={s.subtitle}>Your postbox</Text><Text style={s.eyebrow}>{mine ? `${mine.length} LETTERS` : 'SYNCING'}</Text></View>
-        <View accessibilityRole="tablist" style={s.tabs}>{([['recipient', 'Incoming'], ['sender', 'Sent'], ['catcher', 'Caught']] as const).map(([value, label]) => <Pressable key={value} accessibilityRole="tab" aria-selected={tab === value} accessibilityState={{ selected: tab === value }} accessibilityLabel={label} onPress={() => setTab(value)} style={[s.tab, tab === value && s.tabActive]}><Text style={[s.tabText, tab === value && s.tabActiveText]}>{label}</Text></Pressable>)}</View>
-        {mine === undefined ? <Loading label="Checking the postbox…" /> : mine.length === 0 ? <View style={s.card}><Envelope small /><Text style={s.subtitle}>{tab === 'catcher' ? 'No caught letters yet.' : tab === 'recipient' ? 'Nothing on the doorstep. Yet.' : 'Your first journey starts here.'}</Text><Text style={s.small}>{tab === 'catcher' ? 'Letters you intercept appear here. Choose one to open its caught-letter flow.' : tab === 'recipient' ? 'Incoming letters appear here. Their words remain hidden until the server confirms delivery.' : 'Send to an accepted friend. Every letter has its own route and arrival time.'}</Text></View> : <View>{mine.map((flight) => <FlightCard key={flight.id} flight={flight} serverNow={clock.serverNow} onOpen={() => flight.role === 'catcher' && onReturn ? onReturn(flight.id) : go({ screen: 'detail', id: flight.id })} />)}</View>}
-      </>}
-    </> : page.screen === 'compose' ? <Compose mochi={Boolean(account?.pigeons.some(bird => bird.name === 'Mochi'))} profile={profile} friends={friends} friendsLoading={connections === undefined} controller={draft} connected={connected} replying={Boolean(page.reply)} replyTarget={replyTarget} onBack={() => go({ screen: 'postbox' })} onNavigate={onNavigate} onKeep={() => setReplyTarget(null)} onReplace={() => { if (replyTarget) draft.startReply(replyTarget); setReplyTarget(null); }} onSend={() => void send()} /> : <>
-      <ScreenHeader title={page.sent ? 'On its way' : 'Your letter'} disabled={draft.busy} onBack={() => go({ screen: 'postbox' })} />
-      <LetterDetail id={page.id} serverNow={clock.serverNow} justSent={Boolean(page.sent)} onReply={reply} onReturn={onReturn} onHome={() => go({ screen: 'postbox' })} />
+      <ScreenHeader title="Your postbox" onBack={home} />
+      {connections !== undefined && friends.length === 0 && <Text style={s.small}>{profile.demo && pair ? 'Your partner will appear after accepting the invitation.' : 'No accepted friends yet. Only your existing accepted connections appear here.'}</Text>}
+      {profile.demo && pair === undefined ? <Loading label="Checking your pair…" /> : pair && !pair.partner ? <Invitation token={pair.inviteToken} expiresAt={pair.expiresAt} serverNow={clock.serverNow} /> : pair?.partner ? <Text style={s.small}>@{profile.handle} · {(profile.cityId ? cityById(profile.cityId).name : 'City not set')}{'\n'}Paired with @{pair.partner.handle} · {(pair.partner.cityId ? cityById(pair.partner.cityId).name : 'City not set')}</Text> : null}
+      {draft.error && <Notice error>{draft.error}</Notice>}
+      <View style={s.between}><Text accessibilityRole="header" style={s.subtitle}>Your postbox</Text><Text style={s.eyebrow}>{mine ? `${mine.length} LETTERS` : 'SYNCING'}</Text></View>
+      <View accessibilityRole="tablist" style={s.tabs}>{([['recipient', 'Incoming'], ['sender', 'Sent'], ['catcher', 'Caught']] as const).map(([value, label]) => <Pressable key={value} accessibilityRole="tab" aria-selected={tab === value} accessibilityState={{ selected: tab === value }} accessibilityLabel={label} onPress={() => setTab(value)} style={[s.tab, tab === value && s.tabActive]}><Text style={[s.tabText, tab === value && s.tabActiveText]}>{label}</Text></Pressable>)}</View>
+      {mine === undefined ? <Loading label="Checking the postbox…" /> : mine.length === 0 ? <View style={s.card}><Envelope small /><Text style={s.subtitle}>{tab === 'catcher' ? 'No caught letters yet.' : tab === 'recipient' ? 'Nothing on the doorstep. Yet.' : 'Your first journey starts here.'}</Text><Text style={s.small}>{tab === 'catcher' ? 'Letters you intercept appear here.' : tab === 'recipient' ? 'Incoming letters remain hidden until the server confirms delivery.' : 'Send to an accepted friend. Every letter has its own route and arrival time.'}</Text></View> : <View>{mine.map(flight => <FlightCard key={flight.id} flight={flight} serverNow={clock.serverNow} onOpen={() => flight.role === 'catcher' && onReturn ? onReturn(flight.id) : go({ screen: 'detail', id: flight.id })} />)}</View>}
+    </> : <>
+      <ScreenHeader title="Your letter" disabled={draft.busy} onBack={home} />
+      <LetterDetail id={page.id} serverNow={clock.serverNow} onReply={reply} />
     </>}
   </PageFrame>;
 }
-
-function WorldSelection({ id, connected, onCatch }: { id: string | null; connected: boolean; onCatch?: (flightId: string) => void }) {
+function WorldSelection({ id, connected, onCatch, onShop }: { id: string | null; connected: boolean; onCatch?: (flightId: string) => void; onShop: () => void }) {
   const result = useQuery(api.flights.detail, id ? { id } : 'skip');
   if (!id) return <><Text style={s.subtitle}>A quiet patch of sky.</Text><Text style={s.small}>No Open Skies flights are available here right now. We’ll show real flights as they appear.</Text></>;
   if (result === undefined) return <Loading label="Checking this flight’s availability…" />;
   const flight = result.flight;
   if (!flight || flight.visibility !== 'open' || flight.state !== 'in_flight') return <Notice>This flight is no longer available. Choose another pigeon.</Notice>;
   return <><Text accessibilityRole="header" style={s.subtitle}>A pigeon is passing.</Text><Text style={s.body}>{flight.origin.name} → {flight.destination.name}</Text><Text style={s.small}>{flight.demo ? 'Demo speed · ' : ''}Arrival {exactTime(flight.arrivesAt)}</Text>
-    <Button label={onCatch ? 'Try to intercept →' : 'Interception · coming soon'} disabled={!connected || !flight.canCatch || !onCatch} onPress={() => { if (connected && flight.canCatch) onCatch?.(flight.id); }} />
-    <Text style={s.small}>{!connected ? 'Reconnect to check whether you can intercept.' : !flight.canCatch ? 'The server says this flight isn’t eligible for you to catch right now.' : !onCatch ? 'The game is not connected to this build yet.' : 'A catch can reveal this Open Skies letter and stop its delivery.'}</Text></>;
+    <Button label={onCatch ? 'Try to intercept →' : 'Interception · coming soon'} disabled={!connected || flight.canSlingshot !== true || !onCatch} onPress={() => { if (connected && flight.canSlingshot === true) onCatch?.(flight.id); }} />
+    <Button label="Stone shop" secondary onPress={onShop} />
+    <Text style={s.small}>{!connected ? 'Reconnect to check whether you can intercept.' : flight.canSlingshot !== true ? 'The server says this flight isn’t eligible for you to catch right now.' : !onCatch ? 'The game is not connected to this build yet.' : 'A catch can reveal this Open Skies letter and stop its delivery.'}</Text></>;
 }
 
 function Invitation({ token, expiresAt, serverNow }: { token: string | null; expiresAt: number | null; serverNow: number | null }) {
@@ -104,65 +238,17 @@ function Invitation({ token, expiresAt, serverNow }: { token: string | null; exp
 
 function FlightCard({ flight, serverNow, onOpen }: { flight: FlightSummary; serverNow: number | null; onOpen: () => void }) {
   const handle = flight.role === 'sender' ? flight.recipientHandle : flight.senderHandle;
-  return <Pressable accessibilityRole="button" accessibilityLabel={`${flight.role === 'catcher' ? 'Caught letter from' : flight.role === 'sender' ? 'Letter to' : 'Letter from'} ${handle ? `@${handle}` : 'your pen pal'}. ${flightStatus(flight, serverNow)}`} onPress={onOpen} style={({ pressed }) => [s.flightCard, pressed && s.pressed]}><View style={s.row}><Envelope small /><View style={s.grow}><Text style={s.flightHandle}>{flight.role === 'catcher' ? 'Caught from' : flight.role === 'sender' ? 'To' : 'From'} {handle ? `@${handle}` : 'your pen pal'}</Text><Text style={s.small}>{flight.origin.name} → {flight.destination.name}</Text></View><Text style={s.body}>↗</Text></View><View style={s.tight}><Text style={s.badgeText}>{flightStatus(flight, serverNow)} · {flight.visibility === 'sealed' ? 'Sealed' : 'Open Skies'}</Text><Text style={s.small}>Arrival {exactTime(flight.arrivesAt)}{flight.demo ? ' · Demo speed' : ''}</Text></View></Pressable>;
+  return <Pressable accessibilityRole="button" accessibilityLabel={`${flight.role === 'catcher' ? 'Caught letter from' : flight.role === 'sender' ? 'Letter to' : 'Letter from'} ${handle ? `@${handle}` : flight.anonymous ? 'Anonymous' : 'your pen pal'}. ${flightStatus(flight, serverNow)}`} onPress={onOpen} style={({ pressed }) => [s.flightCard, pressed && s.pressed]}><View style={s.row}><Envelope small /><View style={s.grow}><Text style={s.flightHandle}>{flight.role === 'catcher' ? 'Caught from' : flight.role === 'sender' ? 'To' : 'From'} {handle ? `@${handle}` : flight.anonymous ? 'Anonymous' : 'your pen pal'}</Text><Text style={s.small}>{flight.origin.name} → {flight.destination.name}</Text></View><Text style={s.body}>↗</Text></View><View style={s.tight}><Text style={s.badgeText}>{flightStatus(flight, serverNow)} · {flight.visibility === 'sealed' ? 'Sealed' : 'Open Skies'}</Text><Text style={s.small}>Arrival {exactTime(flight.arrivesAt)}{flight.demo ? ' · Demo speed' : ''}</Text></View></Pressable>;
 }
-
-function Compose({ mochi, profile, friends, friendsLoading, controller, connected, replying, replyTarget, onBack, onNavigate, onKeep, onReplace, onSend }: { mochi: boolean; profile: Profile; friends: Profile[]; friendsLoading: boolean; controller: DraftController; connected: boolean; replying: boolean; replyTarget: string | null; onBack: () => void; onNavigate: () => void; onKeep: () => void; onReplace: () => void; onSend: () => void }) {
-  const { draft, locked, busy, receipt } = controller;
-  const [choosing, setChoosing] = useState(false);
-  const [search, setSearch] = useState('');
-  const [inputHeight, setInputHeight] = useState(154);
-  const recipient = friends.find((friend) => friend.id === draft?.recipientId);
-  const estimate = profile.cityId && recipient?.cityId ? routeEstimate(profile, recipient) : null;
-  const visibility = draft?.visibility;
-  const acknowledged = Boolean(draft?.openAcknowledged);
-  const legacySealed = controller.legacySealedDraft;
-  const canSend = draft && (receipt || controller.pendingRetry || (recipient?.cityId && profile.cityId && validDraft(draft) && visibility === 'open' && acknowledged));
-  const matches = matchingFriends(friends, search);
-
-  if (choosing) return <View style={s.stack}>
-    <ScreenHeader title="Who’s it for?" backLabel="Back to your letter" onBack={() => { setChoosing(false); onNavigate(); }} />
-    <Field label="Find a friend" placeholder="Search by handle or city" autoCapitalize="none" autoCorrect={false} value={search} onChangeText={setSearch} />
-    <Text style={s.small}>A little hello to someone you know. Only your accepted friends are shown.</Text>
-    <Text style={s.eyebrow}>YOUR FRIENDS</Text>
-    {friendsLoading ? <Loading label="Loading accepted friends…" /> : matches.length === 0 ? <Notice>{friends.length ? 'No friends match that search.' : 'No accepted friends are available yet.'}</Notice> : matches.map((friend) => <Pressable key={friend.id} accessibilityRole="radio" accessibilityLabel={`Write to @${friend.handle} in ${(friend.cityId ? cityById(friend.cityId).name : 'City not chosen')}`} aria-checked={draft?.recipientId === friend.id} accessibilityState={{ checked: draft?.recipientId === friend.id, disabled: locked || busy }} disabled={locked || busy} onPress={() => { controller.edit({ recipientId: friend.id }); setChoosing(false); setSearch(''); onNavigate(); }} style={[s.friend, draft?.recipientId === friend.id && s.selected]}><View style={s.avatar}><Text style={s.body}>{friend.handle.charAt(0).toUpperCase()}</Text></View><View style={s.grow}><Text style={s.flightHandle}>@{friend.handle}</Text><Text style={s.small}>{(friend.cityId ? cityById(friend.cityId).name : 'City not chosen')}</Text></View><Text style={s.body}>→</Text></Pressable>)}
-  </View>;
-
-  return <View style={s.stack}>
-    <ScreenHeader title={replying ? 'Send a little reply' : 'Send a pigeon'} disabled={busy} onBack={onBack} />
-    {!profile.cityId && <Notice>Choose a home city before sending. City selection will be available in the first-send flow.</Notice>}
-    {recipient && !recipient.cityId && <Notice>Your friend needs to choose a city before this letter can fly.</Notice>}
-    {mochi && <View style={s.row}><Pigeon name="Mochi" size={42} /><Text style={s.small}>Flying with Mochi</Text></View>}
-    {replyTarget && <View style={s.card}><Text style={s.subtitle}>You already have a saved letter.</Text><Text style={s.small}>{locked ? 'Confirm the existing send before starting a reply. Its exact contents and retry key are protected.' : 'A reply is a new, blank letter with its own timed journey. Starting it will replace your unsent draft.'}</Text>{!locked && <Button label="Replace draft with a blank reply" onPress={onReplace} />}<Button label={locked ? 'Resolve saved send first' : 'Keep my current draft'} secondary onPress={onKeep} /></View>}
-    {!draft ? <>{controller.error ? <Notice error>{controller.error}</Notice> : <Loading label="Restoring your saved draft…" />}<Button label="Retry loading draft" secondary onPress={controller.retryStorage} /></> : <>
-      <View style={s.row}><Text style={[s.body, s.muted]}>To</Text><Pressable accessibilityRole="button" accessibilityLabel={recipient ? `Change recipient, currently @${recipient.handle}` : 'Choose a friend'} accessibilityState={{ disabled: locked || busy }} disabled={locked || busy} onPress={() => { setChoosing(true); onNavigate(); }} style={[s.recipientChip, { flexShrink: 1 }]}><Text style={s.recipientName}>{recipient ? `@${recipient.handle}` : draft.recipientId ? 'Saved recipient' : 'Choose a friend'}</Text><Text style={s.recipientName}>＋</Text></Pressable></View>
-      {draft.recipientId && !recipient && <Notice>The saved recipient is no longer in your accepted friends. {draft.pending ? 'Retrying will ask the server to confirm the original send.' : 'Choose an accepted friend before sending.'}</Notice>}
-      <PostalCard route={`${(profile.cityId ? cityById(profile.cityId).name : 'Choose your city')} → ${recipient ? (recipient.cityId ? cityById(recipient.cityId).name : 'City not chosen') : 'Their city'}`} signature={`@${profile.handle}`} footer={<Text accessibilityLabel={`${codepoints(draft.body)} of 280 characters`} style={[s.small, codepoints(draft.body) > 280 && s.errorText]}>{codepoints(draft.body)} / 280</Text>}>
-        <TextInput accessibilityLabel="Your letter" placeholder="Something small you’d tell them if they were here…" placeholderTextColor={colors.muted} value={draft.body} onChangeText={(body) => controller.edit({ body })} multiline scrollEnabled={false} editable={!locked && !busy} onContentSizeChange={(event) => setInputHeight(Math.max(154, event.nativeEvent.contentSize.height))} style={[s.letterInput, { minHeight: inputHeight }]} />
-      </PostalCard>
-      <Text accessibilityLiveRegion="polite" style={s.small}>{controller.saved ? 'Saved on this device' : 'Saving on this device…'}</Text>
-      {estimate && recipient && <View style={s.tight}><View style={s.between}><Text style={s.body}>{profile.demo ? 'Demo speed' : 'Estimated journey'}</Text><Text style={[s.body, { fontWeight: '600' }]}>~{formatDuration(profile.demo ? estimate.demoSeconds : estimate.normalSeconds)}</Text></View><Text style={s.small}>{estimate.distance.toFixed(1)} km · Normal at 60 km/h: {formatDuration(estimate.normalSeconds)}. The server confirms the exact arrival.</Text></View>}
-      {visibility === 'sealed' ? <View style={s.stack}><Notice>{legacySealed ? 'This saved draft was written as Sealed. New letters use Open Skies. Choose to convert it, then acknowledge the interception risk before sending.' : 'Saved Sealed send. Only you and the recipient can read this historical letter; its original retry payload is preserved.'}</Notice>{legacySealed && <Button label="Convert this draft to Open Skies" secondary disabled={busy || locked} onPress={() => controller.convertLegacyToOpenSkies()} />}</View> : <View style={s.notice}><Text style={[s.body, { fontWeight: '600', color: colors.blue }]}>Open Skies</Text><Text style={s.small}>{OPEN_SKIES_DISCLOSURE}</Text>{!locked && <Pressable accessibilityRole="checkbox" accessibilityLabel="I understand this letter can be intercepted and read" aria-checked={acknowledged} accessibilityState={{ checked: acknowledged, disabled: busy }} disabled={busy} onPress={() => controller.acknowledgeOpenSkies(!acknowledged)} style={[s.row, { minHeight: 48, paddingVertical: 10 }]}><View style={{ width: 24, height: 24, borderWidth: 1.5, borderColor: colors.blue, borderRadius: 6, backgroundColor: acknowledged ? colors.blue : colors.card, alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: colors.card }}>{acknowledged ? '✓' : ''}</Text></View><Text style={[s.small, s.grow]}>I understand this letter can be intercepted and read.</Text></Pressable>}</View>}
-      {locked && !receipt && <Notice>This letter is locked for sending or retry. It may already be flying. Retrying confirms the exact same letter without a duplicate.</Notice>}
-      {receipt && <Notice>The server accepted your letter. Finish local cleanup to open its flight; this will not launch another letter.</Notice>}
-      {controller.error ? <><Notice error>{controller.error}</Notice>{!controller.saved && !receipt && <Button label="Retry saving draft" secondary disabled={busy} onPress={controller.retryStorage} />}</> : null}
-      <Button label={busy ? 'Confirming your flight…' : receipt ? 'Finish local cleanup' : draft.pending ? 'Retry the same letter' : replying ? 'Let your reply fly →' : 'Let it fly →'} disabled={busy || (!connected && !receipt) || !canSend || Boolean(replyTarget)} onPress={onSend} />
-      {replying && <Text style={s.small}>A reply is a new flight with its own travel time. Nothing is sent automatically.</Text>}
-    </>}
-  </View>;
-}
-
-function LetterDetail({ id, serverNow, justSent, onReply, onReturn, onHome }: { id: string; serverNow: number | null; justSent: boolean; onReply: (recipientId: string) => void; onReturn?: (flightId: string) => void; onHome: () => void }) {
+function LetterDetail({ id, serverNow, onReply }: { id: string; serverNow: number | null; onReply: (recipientId: string) => void }) {
   const result = useQuery(api.flights.detail, { id });
   if (result === undefined) return <Loading label="Fetching the server-confirmed flight…" />;
   const flight = result.flight;
   if (!flight) return <Notice>This letter is unavailable to this account. No private contents have been loaded.</Notice>;
   const body = readableBody(flight);
   return <View style={s.stack}>
-    {flight.role === 'catcher' && flight.state === 'intercepted' && <Button label={onReturn ? 'Open caught letter →' : 'Caught letters · coming soon'} disabled={!onReturn} onPress={() => onReturn?.(flight.id)} />}
-    {justSent && <View style={s.dock}><View style={{ alignSelf: 'center' }}><PaperPigeon size={108} /></View><Text style={s.subtitle}>Your pigeon’s on the way.</Text><Text style={s.body}>To @{flight.recipientHandle ?? 'your pen pal'} · {flight.destination.name}</Text><Text style={s.small}>The server accepted your letter. Its journey continues even when you close the app.</Text><Button label="Back to my flights" secondary onPress={onHome} /></View>}
     <View style={s.notice}><View style={s.between}><Text accessibilityLiveRegion="polite" style={s.badgeText}>{flightStatus(flight, serverNow)}</Text><Text style={s.small}>{flight.visibility === 'sealed' ? 'Sealed' : 'Open Skies'}</Text></View><Text style={s.small}>{flight.demo ? 'Demo speed · ' : ''}{flight.origin.name} → {flight.destination.name}</Text></View>
-    {body !== null ? <><PostalCard route={`${flight.origin.name} → ${flight.destination.name}`} signature={`@${flight.senderHandle ?? 'your pen pal'}`}><Text style={s.eyebrow}>DELIVERED · OPENED FOR YOU</Text><Text selectable style={s.letterBody}>{body}</Text></PostalCard>{flight.role === 'recipient' && flight.otherProfileId && <><Button label="Write a reply →" onPress={() => onReply(flight.otherProfileId!)} /><Text style={s.small}>No reply deadline. Your reply starts blank and takes a new timed flight.</Text></>}</> : <View style={s.card}><Envelope /><Text style={s.subtitle}>{flight.state === 'intercepted' ? 'This flight was intercepted.' : flight.state === 'delivered' ? 'Letter text is unavailable.' : 'Still on the wing.'}</Text><Text style={s.body}>{flight.state === 'intercepted' ? 'This letter did not reach its destination.' : flight.state === 'delivered' ? 'The server has not returned readable text for this account.' : 'Your recipient’s copy stays closed until the server confirms delivery. A finished countdown never opens it.'}</Text></View>}
-    <View style={s.card}><Text style={s.eyebrow}>FLIGHT DETAILS</Text><Text style={s.body}>{flight.origin.name} → {flight.destination.name}</Text><Text style={s.small}>Departed {exactTime(flight.departedAt)}</Text><Text style={s.body}>Arrival {exactTime(flight.arrivesAt)}</Text><Text style={s.small}>{flight.distanceKm.toFixed(1)} km · Travel time {formatDuration((flight.arrivesAt - flight.departedAt) / 1000)}</Text>{flight.demo && <Text style={s.small}>Demo speed is accelerated. Normal travel at 60 km/h: {formatDuration(durationSeconds(flight.distanceKm, false, 'cruise'))}.</Text>}{flight.visibility === 'open' && <Notice>{OPEN_SKIES_DISCLOSURE}</Notice>}</View>
+    {body !== null ? <><PostalCard route={`${flight.origin.name} → ${flight.destination.name}`} signature={flight.anonymous ? 'Anonymous' : `@${flight.senderHandle ?? 'your pen pal'}`}><Text style={s.eyebrow}>{flight.role === 'catcher' ? 'CAUGHT · OPENED FOR YOU' : 'DELIVERED · OPENED FOR YOU'}</Text><Text selectable style={s.letterBody}>{body}</Text></PostalCard>{flight.role === 'recipient' && flight.otherProfileId && <><Button label="Write a reply →" onPress={() => onReply(flight.otherProfileId!)} /><Text style={s.small}>No reply deadline. Your reply starts blank and takes a new timed flight.</Text></>}</> : <View style={s.card}><Envelope /><Text style={s.subtitle}>{flight.state === 'intercepted' ? 'This flight was intercepted.' : flight.state === 'delivered' ? 'Letter text is unavailable.' : 'Still on the wing.'}</Text><Text style={s.body}>{flight.state === 'intercepted' ? 'This letter did not reach its destination.' : flight.state === 'delivered' ? 'The server has not returned readable text for this account.' : 'Your recipient’s copy stays closed until the server confirms delivery. A finished countdown never opens it.'}</Text></View>}
+    <View style={s.card}><Text style={s.eyebrow}>FLIGHT DETAILS</Text><Text style={s.body}>{flight.origin.name} → {flight.destination.name}</Text><Text style={s.small}>Departed {exactTime(flight.departedAt)}</Text><Text style={s.body}>Arrival {exactTime(flight.arrivesAt)}</Text><Text style={s.small}>{flight.distanceKm.toFixed(1)} km · Travel time {formatDuration((flight.arrivesAt - flight.departedAt) / 1000)}</Text>{flight.demo && <Text style={s.small}>Demo speed is accelerated. Normal travel at 60 km/h: {formatDuration(durationSeconds(flight.distanceKm, false, 'cruise'))}.</Text>}{flight.visibility === 'open' && <Notice>{flight.anonymous ? 'Someone may catch and read this message, preventing delivery. Your profile stays hidden; the cities and your words can still identify you.' : OPEN_SKIES_DISCLOSURE}</Notice>}</View>
   </View>;
 }

@@ -4,11 +4,15 @@ import type { FunctionReturnType } from 'convex/server';
 import { Component, useEffect, useState, type ReactNode } from 'react';
 import { Text, View } from 'react-native';
 import { api } from '../convex/_generated/api';
+import type { Profile } from '../src/domain';
 import { Mailbox } from './Mailbox';
 import { FlockReady, PhoneOnboarding, ProfileOnboarding } from './Onboarding';
 import { onboardingRoute } from './onboardingModel';
 import { Button, Link, Loading, Notice, s } from './ui';
 import { PageFrame, usePageInsets } from './page03/atoms';
+import { CatchGame } from './game/CatchGame';
+import { useCatchTransport } from './game/useCatchTransport';
+import { DemoEntry } from './DemoEntry';
 
 export function LetterApp(props: { deployment: string; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void }) {
   return <QueryBoundary><AuthGate {...props} /></QueryBoundary>;
@@ -18,13 +22,14 @@ type RoutingProps = { deployment: string; onCatch?: (flightId: string) => void; 
 type AccountStatus = Exclude<FunctionReturnType<typeof api.onboarding.status>, { status: 'signedOut' }>;
 
 function AuthGate(props: RoutingProps) {
+  const [demoEntry, setDemoEntry] = useState(false);
   const { isAuthenticated, isLoading } = useConvexAuth();
   const { signIn } = useAuthActions();
   const sendCode = useAction(api.phoneAuth.sendCode);
   const status = useQuery(api.onboarding.status, isAuthenticated ? {} : 'skip');
   const route = onboardingRoute(isLoading, isAuthenticated, status?.status);
   if (route === 'loading') return <View style={s.safe}><Loading label="Restoring your nest…" /></View>;
-  if (route === 'phone' || !status || status.status === 'signedOut') return <PhoneOnboarding sendCode={phone => sendCode({ phone })} verifyCode={(phone, code) => signIn('phone', { phone, code })} />;
+  if (route === 'phone' || !status || status.status === 'signedOut') return demoEntry && process.env.EXPO_PUBLIC_DEMO_ENTRY === 'true' ? <DemoEntry onBack={() => setDemoEntry(false)} /> : <View style={{ flex: 1 }}><PhoneOnboarding sendCode={phone => sendCode({ phone })} verifyCode={(phone, code) => signIn('phone', { phone, code })} />{process.env.EXPO_PUBLIC_DEMO_ENTRY === 'true' && <Button label="Try demo — no phone verification" onPress={() => setDemoEntry(true)} />}</View>;
   return <AccountRouter key={status.accountId} status={status} {...props} />;
 }
 
@@ -66,7 +71,19 @@ function Home({ consumeCompose, ...props }: { deployment: string; connected: boo
   useEffect(() => { if (profile && props.initialCompose) consumeCompose(false); }, [profile, props.initialCompose, consumeCompose]);
   if (profile === undefined) return <Loading label="Finding your nest…" />;
   if (!profile) return <Notice error>Your profile could not be loaded. Please reopen the app to retry.</Notice>;
-  return <Mailbox key={profile.id} profile={profile} {...props} onNavigate={() => {}} />;
+  return <GameHome key={profile.id} profile={profile} {...props} />;
+}
+
+function GameHome({ profile, ...props }: Omit<Parameters<typeof Home>[0], 'consumeCompose'> & { profile: Profile }) {
+  const [encounterId, setEncounterId] = useState<string | null>(null);
+  const [openFlightId, setOpenFlightId] = useState<string>();
+  const transport = useCatchTransport();
+  return <View style={{ flex: 1 }}>
+    <View testID="mailbox-host" style={{ flex: 1, display: encounterId ? 'none' : 'flex' }} pointerEvents={encounterId ? 'none' : 'auto'} accessibilityElementsHidden={Boolean(encounterId)} importantForAccessibility={encounterId ? 'no-hide-descendants' : 'auto'} aria-hidden={Boolean(encounterId)}>
+      <Mailbox key={profile.id} profile={profile} {...props} openFlightId={openFlightId} onOpenFlightHandled={() => setOpenFlightId(undefined)} onCatch={props.onCatch ?? (id => { setOpenFlightId(undefined); setEncounterId(id); })} onNavigate={() => setOpenFlightId(undefined)} />
+    </View>
+    {encounterId && <CatchGame flightId={encounterId} connected={props.connected} transport={transport} onExit={() => setEncounterId(null)} onOpenLetter={({ flightId }) => { setOpenFlightId(flightId); setEncounterId(null); }} />}
+  </View>;
 }
 
 class QueryBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {

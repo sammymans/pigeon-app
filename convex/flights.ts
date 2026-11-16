@@ -2,7 +2,7 @@ import { ConvexError, v } from 'convex/values';
 import { isHit } from '../src/domain';
 import { internal } from './_generated/api';
 import { internalMutation, mutation, query } from './_generated/server';
-import { catchEligible, finishAttempt, launchFor, settleFlight, summaryProjection } from './flightModel';
+import { catchEligible, slingshotEligible, finishAttempt, launchFor, settleFlight, summaryProjection } from './flightModel';
 import { areBlocked, optionalProfile, pairKey, requireProfile } from './model';
 import { attemptDto, defense, detailDto, resultDto, summaryDto, visibility } from './validators';
 
@@ -47,16 +47,17 @@ export const detail = query({
       flight: {
         ...summary, ...(message ? { body: message.body } : {}), events: flight.events,
         canCatch: Boolean(id) && await catchEligible(ctx, flight, viewer),
-        canRequest: summary.role === 'catcher' && !connection && Boolean(viewer) && !(await areBlocked(ctx, flight.senderId, viewer!._id)),
+        canSlingshot: Boolean(id) && await slingshotEligible(ctx, flight, viewer),
+        canRequest: !flight.anonymous && summary.role === 'catcher' && !connection && Boolean(viewer) && !(await areBlocked(ctx, flight.senderId, viewer!._id)),
         canResend: summary.role === 'sender' && flight.state === 'intercepted',
-        ...(summary.role === 'sender' ? { otherProfileId: flight.recipientId } : summary.role === 'recipient' || summary.role === 'catcher' ? { otherProfileId: flight.senderId } : {}),
+        ...(summary.role === 'sender' ? { otherProfileId: flight.recipientId } : !flight.anonymous && (summary.role === 'recipient' || summary.role === 'catcher') ? { otherProfileId: flight.senderId } : {}),
       }, serverTime: flight.updatedAt,
     };
   },
 });
 
 export const launch = mutation({
-  args: { recipientId: v.string(), body: v.string(), visibility, defense, openAcknowledged: v.boolean(), demo: v.boolean(), requestKey: v.string() },
+  args: { recipientId: v.string(), body: v.string(), visibility, defense, openAcknowledged: v.boolean(), demo: v.boolean(), requestKey: v.string(), pigeonId: v.optional(v.string()), anonymous: v.optional(v.boolean()) },
   returns: v.object({ id: v.string() }),
   handler: async (ctx, args) => ({ id: await launchFor(ctx, await requireProfile(ctx), args) }),
 });
@@ -81,6 +82,8 @@ export const reserve = mutation({
     let flight = id ? await ctx.db.get('flights', id) : null;
     const now = Date.now();
     if (!flight || flight.visibility !== 'open' || flight.state !== 'in_flight' || flight.namespace !== profile.namespace || flight.senderId === profile._id || flight.recipientId === profile._id) throw new ConvexError('This pigeon cannot be caught.');
+    if (flight.activeEncounterId) throw new ConvexError('Another interception is in progress.');
+    if (await ctx.db.query('slingshotEncounters').withIndex('by_flightId_and_catcherId', q => q.eq('flightId', flight!._id).eq('catcherId', profile._id)).unique()) throw new ConvexError('You already attempted this pigeon.');
     if (await areBlocked(ctx, profile._id, flight.senderId) || await areBlocked(ctx, profile._id, flight.recipientId)) throw new ConvexError('This pigeon cannot be caught.');
     const prior = await ctx.db.query('catchAttempts').withIndex('by_flightId_and_catcherId', (q) => q.eq('flightId', flight!._id).eq('catcherId', profile._id)).unique();
     if (prior && !prior.outcome && prior.expiresAt > now && flight.activeAttemptId === prior._id) {

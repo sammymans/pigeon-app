@@ -8,5 +8,7 @@ export default defineApp({
     WHOP_SANDBOX_ACCOUNT_ID: v.optional(v.string()),
     WHOP_SANDBOX_VARIANT_ID: v.optional(v.string()),
     PIGEON_PUBLIC_ORIGIN: v.optional(v.string()),
+    PIGEON_SHOP_CHANNEL: v.optional(v.string()),
+    PIGEON_SHOP_SANDBOX_CATALOG: v.optional(v.string()),
   },
 });

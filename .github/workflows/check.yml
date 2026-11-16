@@ -25,3 +25,5 @@ jobs:
       - run: npm run check
       - run: npx expo install --check
         working-directory: starter
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:messaging-web -- --workers=2

@@ -30,6 +30,14 @@ export type Profile = {
   demo: boolean;
 };
 
+export type Pigeon = {
+  id: string;
+  name: string;
+  ready: boolean;
+  deliveries: number;
+  flightId?: string;
+};
+
 export type FlightSummary = {
   id: string;
   courier: string;
@@ -48,11 +56,13 @@ export type FlightSummary = {
   senderHandle?: string;
   recipientHandle?: string;
   attemptCount: number;
+  anonymous?: boolean;
 };
 
 export type FlightDetail = FlightSummary & {
   body?: string;
   canCatch: boolean;
+  canSlingshot?: boolean;
   canRequest: boolean;
   canResend: boolean;
   otherProfileId?: string;
@@ -84,9 +94,10 @@ export type AttemptResult = {
 
 export type Order = {
   id: string;
-  sku: 'aviator';
-  status: 'pending' | 'paid' | 'failed' | 'refunded' | 'reconciliation';
+  sku: 'aviator' | 'points-100' | 'points-550' | 'points-1200';
+  status: 'pending' | 'paid' | 'failed' | 'canceled' | 'disputed' | 'refunded' | 'reconciliation';
   purchaseUrl?: string;
+  requestKey?: string;
   createdAt: number;
 };
 
@@ -98,6 +109,8 @@ export type LaunchInput = {
   openAcknowledged: boolean;
   demo: boolean;
   requestKey: string;
+  pigeonId?: string;
+  anonymous?: boolean;
 };
 
 export const OPEN_SKIES_DISCLOSURE = 'Someone may catch this pigeon, read this message, and ask to connect with you. If caught, it will not reach its recipient.';

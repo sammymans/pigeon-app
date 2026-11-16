@@ -2,6 +2,7 @@ import { authTables } from '@convex-dev/auth/server';
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
 import { commerceTables } from './commerceSchema';
+import { slingshotTables } from './slingshotSchema';
 import { city, cityId, connectionState, defense, event, flightState, outcome, outfit, visibility } from './validators';
 
 export default defineSchema({
@@ -14,6 +15,7 @@ export default defineSchema({
   }).index('by_ownerId', ['ownerId']).index('by_partnerId', ['partnerId']).index('by_inviteToken', ['inviteToken']),
   ...authTables,
   ...commerceTables,
+  ...slingshotTables,
   profiles: defineTable({
     userId: v.id('users'), handle: v.string(), cityId: v.optional(cityId), equipped: outfit, demo: v.boolean(),
     displayName: v.optional(v.string()), onboardingCompletedAt: v.optional(v.number()),
@@ -23,10 +25,12 @@ export default defineSchema({
     senderId: v.id('profiles'), recipientId: v.id('profiles'), origin: city, destination: city,
     visibility, defense, distanceKm: v.number(), departedAt: v.number(), arrivesAt: v.number(),
     state: flightState, demo: v.boolean(), namespace: v.string(), requestKey: v.string(), openAcknowledged: v.optional(v.boolean()),
-    courier: v.string(), shareToken: v.optional(v.string()), attemptCount: v.number(), catchOpen: v.boolean(),
+    courier: v.string(), pigeonId: v.optional(v.id('pigeons')), anonymous: v.optional(v.boolean()), shareToken: v.optional(v.string()), attemptCount: v.number(), catchOpen: v.boolean(),
     catcherId: v.optional(v.id('profiles')), activeAttemptId: v.optional(v.id('catchAttempts')),
+    activeEncounterId: v.optional(v.id('slingshotEncounters')),
     updatedAt: v.number(), events: v.array(event),
   }).index('by_senderId_and_requestKey', ['senderId', 'requestKey'])
+    .index('by_pigeonId', ['pigeonId'])
     .index('by_senderId_and_demo', ['senderId', 'demo'])
     .index('by_recipientId_and_demo', ['recipientId', 'demo'])
     .index('by_catcherId_and_demo', ['catcherId', 'demo'])

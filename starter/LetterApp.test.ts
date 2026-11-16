@@ -28,6 +28,7 @@ vi.mock('react-native', () => ({ View: 'view', Text: 'text' }));
 vi.mock('./ui', () => ({ Button: 'button', Link: 'link', Loading: 'loading', Notice: 'notice', s: {} }));
 vi.mock('./page03/atoms', () => ({ PageFrame: 'frame', usePageInsets: () => ({ top: 0, bottom: 0 }) }));
 vi.mock('./Onboarding', () => ({ FlockReady: 'ready', PhoneOnboarding: 'phone', ProfileOnboarding: 'profile' }));
+vi.mock('./game/CatchGame', () => ({ CatchGame: 'game' }));
 vi.mock('./Mailbox', () => ({ Mailbox: (props: { initialCompose: boolean; profile: { id: string } }) => {
   const [screen] = useState(props.initialCompose ? 'compose' : 'home');
   return createElement('mailbox', { ...props, screen });
@@ -88,5 +89,30 @@ describe('account-scoped onboarding navigation', () => {
     await render(); await finish();
     await act(async () => node('ready').props.onHome()); expect(node('mailbox').props.screen).toBe('home');
     await update(); expect(node('mailbox').props.screen).toBe('home');
+  });
+  it('consumes the caught-flight intent and can deliberately open the same flight again', async () => {
+    state.account.status = 'complete'; await render();
+    await act(async () => node('mailbox').props.onCatch('opaque-flight'));
+    expect(node('game').props.flightId).toBe('opaque-flight');
+    expect(node('game').props.flight).toBeUndefined();
+    await act(async () => node('game').props.onOpenLetter({ flightId: 'opaque-flight' }));
+    expect(node('mailbox').props.openFlightId).toBe('opaque-flight');
+    await act(async () => node('mailbox').props.onOpenFlightHandled());
+    expect(node('mailbox').props.openFlightId).toBeUndefined();
+    await act(async () => node('mailbox').props.onCatch('opaque-flight'));
+    await act(async () => node('game').props.onOpenLetter({ flightId: 'opaque-flight' }));
+    expect(node('mailbox').props.openFlightId).toBe('opaque-flight');
+  });
+  it('drops game and letter intents on direct account change and auth restoration', async () => {
+    state.account.status = 'complete'; await render();
+    await act(async () => node('mailbox').props.onCatch('private-to-a'));
+    state.account = { ...state.account, accountId: 'b', username: 'bob' }; await update();
+    expect(root().findAllByType('game' as never)).toHaveLength(0);
+    expect(node('mailbox').props.openFlightId).toBeUndefined();
+    await act(async () => node('mailbox').props.onCatch('private-to-b'));
+    await act(async () => node('game').props.onOpenLetter({ flightId: 'private-to-b' }));
+    state.authenticated = false; await update();
+    state.authenticated = true; await update();
+    expect(node('mailbox').props.openFlightId).toBeUndefined();
   });
 });
