@@ -1,0 +1,7 @@
+{
+  "expo": {
+    "name": "Messaging local test fixture",
+    "slug": "messaging-local-test-fixture",
+    "web": { "bundler": "metro" }
+  }
+}

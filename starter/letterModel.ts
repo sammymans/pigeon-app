@@ -6,6 +6,8 @@ export type Draft = {
   body: string;
   visibility: 'open' | 'sealed';
   openAcknowledged: boolean;
+  pigeonId?: string;
+  anonymous?: boolean;
   pending: LaunchInput | null;
 };
 
@@ -34,13 +36,13 @@ export function sealDraft(draft: Draft, demo: boolean, requestKey: string): Draf
   if (!validDraft(draft) || !requestKey) throw new Error('Choose a friend and write 1–280 characters.');
   if (draft.visibility !== 'open') throw new Error('Convert this saved draft to Open Skies before starting a new flight.');
   if (!draft.openAcknowledged) throw new Error('Acknowledge that another eligible player can catch and read this letter and prevent its delivery.');
-  return { ...draft, pending: { recipientId: draft.recipientId, body: draft.body, demo, requestKey, visibility: 'open', defense: 'cruise', openAcknowledged: true } };
+  return { ...draft, pending: { recipientId: draft.recipientId, body: draft.body, demo, requestKey, visibility: 'open', defense: 'cruise', openAcknowledged: true, ...(draft.pigeonId ? { pigeonId: draft.pigeonId } : {}), ...(draft.anonymous !== undefined ? { anonymous: draft.anonymous } : {}) } };
 }
 
-export function editDraft(draft: Draft, changes: Partial<Pick<Draft, 'body' | 'recipientId'>>): Draft {
+export function editDraft(draft: Draft, changes: Partial<Pick<Draft, 'body' | 'recipientId' | 'pigeonId' | 'anonymous'>>): Draft {
   if (draft.pending) throw new Error('Confirm the existing send before editing this letter.');
   const next = { ...draft, ...changes };
-  return next.body === draft.body && next.recipientId === draft.recipientId ? draft : { ...next, openAcknowledged: false };
+  return next.body === draft.body && next.recipientId === draft.recipientId && next.pigeonId === draft.pigeonId && next.anonymous === draft.anonymous ? draft : { ...next, openAcknowledged: false };
 }
 
 export function convertLegacyToOpenSkies(draft: Draft): Draft {
@@ -77,17 +79,27 @@ export function restoreDraft(raw: string | null, demo: boolean): Draft {
     throw new Error('This saved draft has an invalid visibility acknowledgment.');
   }
   const restored: Draft = { version: 2, body: draft.body, recipientId: draft.recipientId, visibility, openAcknowledged, pending: null };
+  if (draft.pigeonId !== undefined) {
+    if (typeof draft.pigeonId !== 'string' || !draft.pigeonId) throw new Error('This saved pigeon could not be verified.');
+    restored.pigeonId = draft.pigeonId;
+  }
+  if (draft.anonymous !== undefined) {
+    if (typeof draft.anonymous !== 'boolean') throw new Error('This saved anonymity choice could not be verified.');
+    restored.anonymous = draft.anonymous;
+  }
   if (draft.pending) {
     const pending = draft.pending;
+    if (pending.pigeonId !== restored.pigeonId || pending.anonymous !== restored.anonymous) throw new Error('The saved send could not be verified. It has not been changed.');
     if (pending.body !== draft.body || pending.recipientId !== draft.recipientId || pending.demo !== demo || pending.visibility !== visibility || pending.defense !== 'cruise' || pending.openAcknowledged !== openAcknowledged || (visibility === 'open' && !openAcknowledged) || typeof pending.requestKey !== 'string' || !pending.requestKey || !validDraft(restored)) {
       throw new Error('The saved send could not be verified. It has not been changed.');
     }
-    return { ...restored, pending: { body: pending.body, recipientId: pending.recipientId, demo: pending.demo, visibility, defense: 'cruise', openAcknowledged, requestKey: pending.requestKey } };
+    return { ...restored, pending: { body: pending.body, recipientId: pending.recipientId, demo: pending.demo, visibility, defense: 'cruise', openAcknowledged, requestKey: pending.requestKey, ...(restored.pigeonId ? { pigeonId: restored.pigeonId } : {}), ...(restored.anonymous !== undefined ? { anonymous: restored.anonymous } : {}) } };
   }
   return restored;
 }
 
 export function routeEstimate(sender: Profile, recipient: Profile) {
+  if (!sender.cityId || !recipient.cityId) throw new Error('Both people must choose a city before estimating a journey.');
   const distance = distanceKm(cityById(sender.cityId), cityById(recipient.cityId));
   return { distance, normalSeconds: durationSeconds(distance, false, 'cruise'), demoSeconds: durationSeconds(distance, true, 'cruise') };
 }
@@ -101,7 +113,9 @@ export function flightStatus(flight: FlightSummary, serverNow: number | null): s
 }
 
 export function readableBody(flight: FlightDetail): string | null {
-  return flight.state === 'delivered' && (flight.role === 'sender' || flight.role === 'recipient') && typeof flight.body === 'string' ? flight.body : null;
+  if (typeof flight.body !== 'string') return null;
+  if (flight.state === 'delivered' && (flight.role === 'sender' || flight.role === 'recipient')) return flight.body;
+  return flight.visibility === 'open' && flight.state === 'intercepted' && flight.role === 'catcher' ? flight.body : null;
 }
 
 export function exactTime(timestamp: number): string {

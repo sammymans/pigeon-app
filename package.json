@@ -5,7 +5,8 @@
   "scripts": {
     "test": "vitest run && vitest run --config starter/vitest.config.ts",
     "typecheck": "tsc -p convex && npm --prefix starter run typecheck",
-    "check": "npm run test && npm run typecheck"
+    "check": "npm run test && npm run typecheck",
+    "test:messaging-web": "playwright test --config playwright.messaging.config.ts"
   },
   "dependencies": {
     "@auth/core": "^0.41.3",
@@ -16,6 +17,7 @@
   },
   "devDependencies": {
     "@edge-runtime/vm": "^5.0.0",
+    "@playwright/test": "^1.65.1",
     "@types/node": "^26.6.5",
     "convex-test": "^0.0.71",
     "typescript": "~6.0.3",

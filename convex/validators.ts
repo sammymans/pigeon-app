@@ -17,6 +17,7 @@ export const summaryDto = v.object({
   role: v.union(v.literal('sender'), v.literal('recipient'), v.literal('catcher'), v.literal('public')),
   shareToken: v.optional(v.string()), senderHandle: v.optional(v.string()), recipientHandle: v.optional(v.string()),
   attemptCount: v.number(),
+  anonymous: v.optional(v.boolean()),
 });
 export const detailDto = summaryDto.extend({
   body: v.optional(v.string()), canCatch: v.boolean(), canRequest: v.boolean(), canResend: v.boolean(),
