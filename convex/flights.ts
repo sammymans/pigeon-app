@@ -47,16 +47,16 @@ export const detail = query({
       flight: {
         ...summary, ...(message ? { body: message.body } : {}), events: flight.events,
         canCatch: Boolean(id) && await catchEligible(ctx, flight, viewer),
-        canRequest: summary.role === 'catcher' && !connection && Boolean(viewer) && !(await areBlocked(ctx, flight.senderId, viewer!._id)),
+        canRequest: !flight.anonymous && summary.role === 'catcher' && !connection && Boolean(viewer) && !(await areBlocked(ctx, flight.senderId, viewer!._id)),
         canResend: summary.role === 'sender' && flight.state === 'intercepted',
-        ...(summary.role === 'sender' ? { otherProfileId: flight.recipientId } : summary.role === 'recipient' || summary.role === 'catcher' ? { otherProfileId: flight.senderId } : {}),
+        ...(summary.role === 'sender' ? { otherProfileId: flight.recipientId } : !flight.anonymous && (summary.role === 'recipient' || summary.role === 'catcher') ? { otherProfileId: flight.senderId } : {}),
       }, serverTime: flight.updatedAt,
     };
   },
 });
 
 export const launch = mutation({
-  args: { recipientId: v.string(), body: v.string(), visibility, defense, openAcknowledged: v.boolean(), demo: v.boolean(), requestKey: v.string() },
+  args: { recipientId: v.string(), body: v.string(), visibility, defense, openAcknowledged: v.boolean(), demo: v.boolean(), requestKey: v.string(), pigeonId: v.optional(v.string()), anonymous: v.optional(v.boolean()) },
   returns: v.object({ id: v.string() }),
   handler: async (ctx, args) => ({ id: await launchFor(ctx, await requireProfile(ctx), args) }),
 });

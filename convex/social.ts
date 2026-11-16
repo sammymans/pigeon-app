@@ -40,6 +40,7 @@ export const request = mutation({
     const flightId = ctx.db.normalizeId('flights', args.flightId);
     const flight = flightId ? await ctx.db.get('flights', flightId) : null;
     if (!flight || flight.state !== 'intercepted' || flight.catcherId !== profile._id) throw new ConvexError('Only the successful catcher can request a connection.');
+    if (flight.anonymous) throw new ConvexError('Anonymous letters do not reveal their sender or accept connection requests.');
     const sender = await ctx.db.get('profiles', flight.senderId);
     if (!sender) throw new ConvexError('This profile is unavailable.');
     requireSameNamespace(profile, sender);
