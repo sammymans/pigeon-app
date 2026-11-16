@@ -11,6 +11,7 @@ export const outcome = v.union(v.literal('caught'), v.literal('missed'), v.liter
 export const event = v.object({ at: v.number(), label: v.string() });
 export const profileDto = v.object({ id: v.string(), handle: v.string(), displayName: v.optional(v.string()), cityId: v.optional(cityId), equipped: outfit, demo: v.boolean() });
 export const summaryDto = v.object({
+  pigeonId: v.optional(v.string()),
   id: v.string(), courier: v.string(), origin: city, destination: city,
   visibility, defense, distanceKm: v.number(), departedAt: v.number(), arrivesAt: v.number(),
   state: flightState, outfit, demo: v.boolean(),

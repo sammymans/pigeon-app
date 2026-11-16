@@ -1,6 +1,12 @@
 # Pigeon first letters
 
-The current entry flow is phone sign-up/sign-in, username setup, and the five-pigeon welcome. See [phone authentication setup and integration handoff](docs/phone-auth.md) before deployment: SMS is disabled unless explicitly configured, legal URLs still require approval, and the messaging integration owns deferred city selection for a first send. The anonymous pair APIs below are retained for compatibility but are no longer promoted by the entry UI.
+The app currently opens a temporary click-through onboarding preview: enter any phone number and verification code, choose any username, and continue through the flock welcome to the sample app. Fields can also be left blank. No SMS, account, or real letter is created; everything resets on reload. Use **Restart onboarding** in the map menu to try it again.
+
+Set `EXPO_PUBLIC_ONBOARDING_PREVIEW=false` to restore connected phone sign-in and real flock/flight data. See [phone authentication setup](docs/phone-auth.md): live SMS still requires server configuration and approved legal URLs. First real send includes an explicit home-city choice and private friend invitations.
+
+The local map design preview is preserved. Run `EXPO_PUBLIC_DESIGN_PREVIEW=true npm --prefix starter start` to explore sample birds and flights without an account. Sample sends stay local and reset on reload. See [the preview workflow](starter/README.md#current-local-design-preview).
+
+The **Coop shop** now includes accessory previews and transfers, point purchases, treats, flock protection, and stone refills. The signed-in implementation stores inventory in Convex; the preview uses local sample points. Cash top-ups and additional-pigeon checkout remain unavailable. See [shop behavior and setup](starter/README.md#coop-shop).
 
 An Expo Go-compatible, two-person sealed-letter demo: pair two real anonymous sessions, compose, wait for server-confirmed delivery, read, and send a new timed reply. Demo travel is explicitly labeled 30–90 seconds alongside the normal distance estimate. The public counter remains available through **Connection diagnostic**.
 
@@ -25,6 +31,7 @@ These tests run in memory and do not deploy or mutate cloud data. Root dependenc
 From `starter/`, set the approved public endpoint explicitly and start a separate Metro service behind its HTTPS proxy:
 
 ```sh
+EXPO_PUBLIC_ONBOARDING_PREVIEW=false \
 EXPO_PUBLIC_CONVEX_URL=https://helpful-kudu-864.convex.cloud \
 EXPO_PACKAGER_PROXY_URL=https://YOUR-METRO-HOST \
 npx expo start --go --host lan --port 8082

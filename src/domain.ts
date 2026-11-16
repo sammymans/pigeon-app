@@ -32,6 +32,7 @@ export type Profile = {
 
 export type FlightSummary = {
   id: string;
+  pigeonId?: string;
   courier: string;
   origin: City;
   destination: City;
@@ -92,6 +93,7 @@ export type Order = {
 
 export type LaunchInput = {
   recipientId: string;
+  pigeonId?: string;
   body: string;
   visibility: Visibility;
   defense: Defense;
@@ -99,6 +101,8 @@ export type LaunchInput = {
   demo: boolean;
   requestKey: string;
 };
+
+export const LETTER_CHARACTER_LIMIT = 500;
 
 export const OPEN_SKIES_DISCLOSURE = 'Someone may catch this pigeon, read this message, and ask to connect with you. If caught, it will not reach its recipient.';
 export const CONNECTION_REQUEST = 'Your pigeon introduced us. Want to exchange letters?';

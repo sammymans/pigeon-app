@@ -1,8 +1,9 @@
-import { cityById, distanceKm, durationSeconds, formatDuration, type Connection, type FlightDetail, type FlightSummary, type LaunchInput, type Profile } from '../src/domain';
+import { cityById, distanceKm, durationSeconds, formatDuration, LETTER_CHARACTER_LIMIT, type Connection, type FlightDetail, type FlightSummary, type LaunchInput, type Profile } from '../src/domain';
 
 export type Draft = {
   version: 2;
   recipientId: string;
+  pigeonId?: string;
   body: string;
   visibility: 'open' | 'sealed';
   openAcknowledged: boolean;
@@ -26,21 +27,21 @@ export function acceptedFriends(connections: Connection[]): Profile[] {
 }
 
 export function validDraft(draft: Draft): boolean {
-  return Boolean(draft.recipientId && draft.body.trim() && codepoints(draft.body) <= 280);
+  return Boolean(draft.recipientId && draft.body.trim() && codepoints(draft.body) <= LETTER_CHARACTER_LIMIT);
 }
 
 export function sealDraft(draft: Draft, demo: boolean, requestKey: string): Draft {
   if (draft.pending) return draft;
-  if (!validDraft(draft) || !requestKey) throw new Error('Choose a friend and write 1–280 characters.');
+  if (!validDraft(draft) || !requestKey) throw new Error('Choose a friend and write 1–500 characters.');
   if (draft.visibility !== 'open') throw new Error('Convert this saved draft to Open Skies before starting a new flight.');
   if (!draft.openAcknowledged) throw new Error('Acknowledge that another eligible player can catch and read this letter and prevent its delivery.');
-  return { ...draft, pending: { recipientId: draft.recipientId, body: draft.body, demo, requestKey, visibility: 'open', defense: 'cruise', openAcknowledged: true } };
+  return { ...draft, pending: { recipientId: draft.recipientId, ...(draft.pigeonId ? { pigeonId: draft.pigeonId } : {}), body: draft.body, demo, requestKey, visibility: 'open', defense: 'cruise', openAcknowledged: true } };
 }
 
-export function editDraft(draft: Draft, changes: Partial<Pick<Draft, 'body' | 'recipientId'>>): Draft {
+export function editDraft(draft: Draft, changes: Partial<Pick<Draft, 'body' | 'recipientId' | 'pigeonId'>>): Draft {
   if (draft.pending) throw new Error('Confirm the existing send before editing this letter.');
   const next = { ...draft, ...changes };
-  return next.body === draft.body && next.recipientId === draft.recipientId ? draft : { ...next, openAcknowledged: false };
+  return next.body === draft.body && next.recipientId === draft.recipientId && next.pigeonId === draft.pigeonId ? draft : { ...next, openAcknowledged: false };
 }
 
 export function convertLegacyToOpenSkies(draft: Draft): Draft {
@@ -76,13 +77,14 @@ export function restoreDraft(raw: string | null, demo: boolean): Draft {
   if ((visibility !== 'open' && visibility !== 'sealed') || typeof openAcknowledged !== 'boolean' || (visibility === 'sealed' && openAcknowledged)) {
     throw new Error('This saved draft has an invalid visibility acknowledgment.');
   }
-  const restored: Draft = { version: 2, body: draft.body, recipientId: draft.recipientId, visibility, openAcknowledged, pending: null };
+  if (draft.pigeonId !== undefined && (typeof draft.pigeonId !== 'string' || !draft.pigeonId)) throw new Error('This saved pigeon could not be read.');
+  const restored: Draft = { version: 2, body: draft.body, recipientId: draft.recipientId, ...(draft.pigeonId ? { pigeonId: draft.pigeonId } : {}), visibility, openAcknowledged, pending: null };
   if (draft.pending) {
     const pending = draft.pending;
-    if (pending.body !== draft.body || pending.recipientId !== draft.recipientId || pending.demo !== demo || pending.visibility !== visibility || pending.defense !== 'cruise' || pending.openAcknowledged !== openAcknowledged || (visibility === 'open' && !openAcknowledged) || typeof pending.requestKey !== 'string' || !pending.requestKey || !validDraft(restored)) {
+    if (pending.pigeonId !== draft.pigeonId || pending.body !== draft.body || pending.recipientId !== draft.recipientId || pending.demo !== demo || pending.visibility !== visibility || pending.defense !== 'cruise' || pending.openAcknowledged !== openAcknowledged || (visibility === 'open' && !openAcknowledged) || typeof pending.requestKey !== 'string' || !pending.requestKey || !validDraft(restored)) {
       throw new Error('The saved send could not be verified. It has not been changed.');
     }
-    return { ...restored, pending: { body: pending.body, recipientId: pending.recipientId, demo: pending.demo, visibility, defense: 'cruise', openAcknowledged, requestKey: pending.requestKey } };
+    return { ...restored, pending: { body: pending.body, recipientId: pending.recipientId, ...(pending.pigeonId ? { pigeonId: pending.pigeonId } : {}), demo: pending.demo, visibility, defense: 'cruise', openAcknowledged, requestKey: pending.requestKey } };
   }
   return restored;
 }

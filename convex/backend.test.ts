@@ -87,8 +87,8 @@ describe('authenticated profiles and private delivery', () => {
 
   it('uses normal distance time and rejects empty, oversized, unconnected and unacknowledged letters', async () => {
     const { alice, profiles, launch } = await setup();
-    await expect(launch({ body: ' ' })).rejects.toThrow('280');
-    await expect(launch({ body: 'a'.repeat(281) })).rejects.toThrow('280');
+    await expect(launch({ body: ' ' })).rejects.toThrow('500');
+    await expect(launch({ body: 'a'.repeat(501) })).rejects.toThrow('500');
     await expect(launch({ recipientId: profiles[2].id })).rejects.toThrow('Connect by invite');
     await expect(launch({ visibility: 'open' })).rejects.toThrow('Acknowledge');
     await expect(launch({ demo: true })).rejects.toThrow('isolated flight mode');

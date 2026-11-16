@@ -25,7 +25,14 @@ export const ensureFlock = mutation({
 
 export const flock = query({
   args: {},
-  handler: async ctx => ({ pigeons: (await completeStatus(ctx, await requireProfile(ctx))).pigeons }),
+  handler: async ctx => {
+    const profile = await requireProfile(ctx);
+    const active = await ctx.db.query('flights').withIndex('by_senderId_and_state', q => q.eq('senderId', profile._id).eq('state', 'in_flight')).take(4);
+    return { pigeons: (await completeStatus(ctx, profile)).pigeons.map(bird => {
+      const flight = active.find(item => item.pigeonId === bird.id);
+      return { ...bird, ...(flight ? { activeFlightId: flight._id } : {}) };
+    }) };
+  },
 });
 
 async function completeStatus(ctx: QueryCtx, profile: Doc<'profiles'>) {

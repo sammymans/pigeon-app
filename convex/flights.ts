@@ -5,6 +5,7 @@ import { internalMutation, mutation, query } from './_generated/server';
 import { catchEligible, finishAttempt, launchFor, settleFlight, summaryProjection } from './flightModel';
 import { areBlocked, optionalProfile, pairKey, requireProfile } from './model';
 import { attemptDto, defense, detailDto, resultDto, summaryDto, visibility } from './validators';
+import { readCoop, saveCoop } from './coopModel';
 
 export const list = query({
   args: { scope: v.union(v.literal('mine'), v.literal('world')), demo: v.boolean() },
@@ -56,7 +57,7 @@ export const detail = query({
 });
 
 export const launch = mutation({
-  args: { recipientId: v.string(), body: v.string(), visibility, defense, openAcknowledged: v.boolean(), demo: v.boolean(), requestKey: v.string() },
+  args: { recipientId: v.string(), pigeonId: v.optional(v.string()), body: v.string(), visibility, defense, openAcknowledged: v.boolean(), demo: v.boolean(), requestKey: v.string() },
   returns: v.object({ id: v.string() }),
   handler: async (ctx, args) => ({ id: await launchFor(ctx, await requireProfile(ctx), args) }),
 });
@@ -84,7 +85,7 @@ export const reserve = mutation({
     if (await areBlocked(ctx, profile._id, flight.senderId) || await areBlocked(ctx, profile._id, flight.recipientId)) throw new ConvexError('This pigeon cannot be caught.');
     const prior = await ctx.db.query('catchAttempts').withIndex('by_flightId_and_catcherId', (q) => q.eq('flightId', flight!._id).eq('catcherId', profile._id)).unique();
     if (prior && !prior.outcome && prior.expiresAt > now && flight.activeAttemptId === prior._id) {
-      return { id: prior._id, flightId: flight._id, phases: prior.phases, startedAt: prior.startedAt, expiresAt: prior.expiresAt, serverTime: now, defense: flight.defense };
+      return { id: prior._id, flightId: flight._id, phases: prior.phases, startedAt: prior.startedAt, expiresAt: prior.expiresAt, serverTime: now, defense: prior.guarded ? 'zigzag' as const : flight.defense };
     }
     if (flight.arrivesAt - now <= 15_000) throw new ConvexError('This pigeon is too close to arrival.');
     if (prior) throw new ConvexError('You already tried to catch this pigeon.');
@@ -98,12 +99,17 @@ export const reserve = mutation({
     }
     const phases = Array.from({ length: 3 }, () => Math.random() * Math.PI * 2);
     const expiresAt = now + 10_000;
-    const attemptId = await ctx.db.insert('catchAttempts', { flightId: flight._id, catcherId: profile._id, namespace: flight.namespace, phases, startedAt: now, expiresAt });
+    const wallet = await readCoop(ctx, profile, now);
+    if (wallet.stones < 1) throw new ConvexError('Your pouch is empty. Get more stones in the coop shop or wait for a free refill.');
+    const sender = await ctx.db.get('profiles', flight.senderId);
+    const guarded = sender ? (await readCoop(ctx, sender, now)).guardUntil > now : false;
+    await saveCoop(ctx, profile, { ...wallet, stones: wallet.stones - 1 });
+    const attemptId = await ctx.db.insert('catchAttempts', { flightId: flight._id, catcherId: profile._id, namespace: flight.namespace, phases, startedAt: now, expiresAt, guarded });
     await ctx.db.patch('flights', flight._id, { activeAttemptId: attemptId, attemptCount: flight.attemptCount + 1, updatedAt: now, events: [...flight.events, { at: now, label: 'Catch attempt started' }] });
     await ctx.db.patch('profiles', profile._id, { catchCooldownUntil: now + 30_000, catchCoolingDown: true });
     await ctx.scheduler.runAt(expiresAt, internal.flights.expireAttempt, { attemptId });
     await ctx.scheduler.runAt(now + 30_000, internal.flights.clearCooldown, { profileId: profile._id, until: now + 30_000 });
-    return { id: attemptId, flightId: flight._id, phases, startedAt: now, expiresAt, serverTime: now, defense: flight.defense };
+    return { id: attemptId, flightId: flight._id, phases, startedAt: now, expiresAt, serverTime: now, defense: guarded ? 'zigzag' as const : flight.defense };
   },
 });
 
@@ -131,7 +137,7 @@ export const resolve = mutation({
     if (args.taps.length !== 3 || args.taps.some((tap, round) => tap !== null && (!Number.isFinite(tap) || tap < round * 2000 || tap >= (round + 1) * 2000))) throw new ConvexError('Submit one elapsed timestamp or a miss for each round.');
     const hits = args.taps.map((tap, round) => tap !== null && isHit(tap - round * 2000, attempt.phases[round]));
     const blocked = await areBlocked(ctx, profile._id, flight.senderId) || await areBlocked(ctx, profile._id, flight.recipientId);
-    const caught = !blocked && hits.filter(Boolean).length >= (flight.defense === 'zigzag' ? 3 : 2);
+    const caught = !blocked && hits.filter(Boolean).length >= (flight.defense === 'zigzag' || attempt.guarded ? 3 : 2);
     const outcome = caught ? 'caught' as const : 'missed' as const;
     await finishAttempt(ctx, flight, attempt, outcome, hits, now, args.taps);
     return { outcome, hits, flightId: flight._id };

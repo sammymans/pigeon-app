@@ -6,7 +6,13 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "plugins": [
-      "expo-font"
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Pigeon to center the map near your current location."
+        }
+      ]
     ]
   }
 }

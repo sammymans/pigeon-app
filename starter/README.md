@@ -1,10 +1,24 @@
 # First-letter Expo starter
 
+## Current local design preview
+
+The app currently opens `OnboardingPreview.tsx`: a local click-through flow for phone entry, verification, username setup, and the flock welcome. Any phone number, code, and username work, and fields can be left blank. The flock welcome uses the entered name, falling back to the username when no name is entered. **Send my first letter** opens the sample composer with the Mochi, Pip, Button, Noodle, and Puddle flock. No sign-in or Convex configuration is needed, and no SMS, accounts, or real messages are created. Sample changes reset on reload; **Restart onboarding** in the map menu also returns to the first step.
+
+Set `EXPO_PUBLIC_DESIGN_PREVIEW=true` to skip onboarding and open the map directly. Set `EXPO_PUBLIC_ONBOARDING_PREVIEW=false` (without design preview) to use the connected letter flow retained in `LetterApp.tsx`.
+
+From the repository root, run `npm --prefix starter start`, then press `i` to open Expo Go in the iOS simulator. The iOS map uses Apple Maps through the Expo-compatible `react-native-maps` package; no API key is needed. It initially frames the sample flights. Drag to pan, pinch to zoom, or tap a flight to focus its route. Tap the target button to allow foreground location access and zoom to your current area. This takes a one-time location reading and shows a blue dot; it does not change your home city or send coordinates to the backend. If permission is denied or location is unavailable, the map stays usable. In the iOS Simulator, the result uses the simulator’s configured location. The browser build retains a static vector fallback.
+
+**Send a pigeon → Your flock → Send with Pip/Miso** opens a sample letter. A preview send moves that bird to Flying and adds a local flight. The hatchery remains a presentation placeholder. The coop shop supports local point purchases, accessory try-ons and transfers, treats, flock guard, and stone refills. Sample point top-ups are explicitly free simulations. Open it from the coop shortcut beside the mailbox, then **Shop →**; the World sky also has a quick stone-shop shortcut.
+
+The mailbox icon opens an alphabetical grid with unopened counts. Tap a person to see their incoming and outgoing envelopes, then open one letter in a reading sheet. Closing it keeps your place in the conversation. New letters use a 500-character sheet, recipient picker, and pigeon review. The preview includes Sammy’s reply and Alex’s 30-minute caught-letter reply window; nearby recipients and returning couriers are local demonstrations. Connected replies still launch a new flight with one of your own available pigeons, and only accepted friends are selectable. Opened-letter IDs are stored per account and deployment on this device; they do not sync across devices. The backend must be deployed with the matching 500-character validation before longer live letters can be sent.
+
+The sections below describe the retained connected letter flow, not the current local entry point.
+
 A phone-sized, Expo Go-compatible frontend for the first sealed-letter slice. It loads no old product routes, Rive, commerce, catching, or custom native modules. `docs/first-letter-contract.md` defines the original implementation contract; the coordinated cloud deployment/preview is now authorized and verified as described in the root README.
 
 ## Configuration and verification
 
-Set `EXPO_PUBLIC_CONVEX_URL` explicitly to the approved isolated Convex backend before starting or exporting Expo. There is no default live target. Missing configuration shows a setup screen and performs no account or letter operations. Do not repoint or publish over the existing counter preview.
+For the connected flow, set `EXPO_PUBLIC_ONBOARDING_PREVIEW=false` and set `EXPO_PUBLIC_CONVEX_URL` explicitly to the approved isolated Convex backend before starting or exporting Expo. There is no default live target. Missing configuration shows a setup screen and performs no account or letter operations. Do not repoint or publish over the existing counter preview.
 
 From the repository root, run `npm --prefix starter run typecheck` and `node_modules/.bin/vitest run --config starter/vitest.config.ts`. Only the integration owner installs dependencies, generates API bindings, runs backend/server commands, or starts previews. The local backend needs the existing Convex Auth setup and the additive `starterPair` APIs.
 
@@ -14,7 +28,7 @@ From the repository root, run `npm --prefix starter run typecheck` and `node_mod
 
 1. On one device or browser profile, choose **Create pair**, start the anonymous session, and choose a handle and home city.
 2. Reveal the private, expiring invitation only to share it with your partner. Hide it before screenshots or recordings. On a separate device/browser profile, the partner chooses **Join pair** and accepts that invitation. Browser tabs sharing local storage are not independent identities.
-3. Choose the accepted friend and write up to 280 Unicode codepoints. Demo accounts always use labeled 30–90-second travel, alongside the normal city-distance travel estimate. Existing Password accounts use normal time and their existing accepted friends.
+3. Choose the accepted friend and write up to 500 Unicode codepoints. Demo accounts always use labeled 30–90-second travel, alongside the normal city-distance travel estimate. Existing Password accounts use normal time and their existing accepted friends.
 4. Send. The returned flight subscription supplies the exact route, departure, ETA, and state. Incoming letters never include body text in lists. The detail view shows text only after the server returns `delivered` and a body. Replies start blank and launch a new timed flight.
 
 ## Persistence and recovery
@@ -26,3 +40,11 @@ Drafts are stored locally in AsyncStorage, keyed by deployment and profile. They
 The display clock is anchored to `profiles.clock`, with reconnect/foreground refresh and `settleMine` recovery. Reaching zero means **Awaiting server confirmation**, never optimistic delivery. The public shared-counter diagnostic remains accessible from the footer, including before sign-in.
 
 Web phone-size evidence is not physical iPhone proof. Native execution still needs an approved Expo Go or device test; JavaScript export alone does not prove it.
+
+## Coop shop
+
+`CoopShop.tsx` is shared by the preview and signed-in app. `src/shop.ts` defines prices and inventory rules. The signed-in flow uses atomic Convex `coop.transact` mutations, account-owned pigeon checks, and request receipts to protect against duplicate charging and overspending. Deploy the additive `coopWallets` and `coopReceipts` schema and new functions together before using the connected shop. No cloud deployment is performed by the local implementation.
+
+Each wallet starts with 120 welcome points, five stones, the Sunday cap and Flight goggles, and one Tailwind treat. Sending a new letter earns five points once; retries earn nothing extra. One accessory is worn by one pigeon at a time, and a pigeon wears one accessory. An owned item can be moved or removed without paying again. A queued treat reduces its selected bird’s next flight duration by 10%; it is consumed once on launch. Flock guard costs 40 points and makes attempts started during the next hour require all three hits, including for already-flying birds. Stones cost 50 points for five; the backend uses one stone for each new catch reservation and refills one per 15 minutes up to five. The separate local slingshot preview spends one per shot.
+
+Cash top-ups and permanent-pigeon checkout are not connected. The existing Whop sandbox supports the legacy Aviator SKU only; it must not credit the new wallet or unlock pigeons. The connected shop disables cash purchases. Preview top-ups clearly say that they use sample points and never contact a payment provider. Preview inventory resets on reload; connected inventory is stored per profile.

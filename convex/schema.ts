@@ -2,6 +2,7 @@ import { authTables } from '@convex-dev/auth/server';
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
 import { commerceTables } from './commerceSchema';
+import { coopTables } from './coopSchema';
 import { city, cityId, connectionState, defense, event, flightState, outcome, outfit, visibility } from './validators';
 
 export default defineSchema({
@@ -14,12 +15,14 @@ export default defineSchema({
   }).index('by_ownerId', ['ownerId']).index('by_partnerId', ['partnerId']).index('by_inviteToken', ['inviteToken']),
   ...authTables,
   ...commerceTables,
+  ...coopTables,
   profiles: defineTable({
     userId: v.id('users'), handle: v.string(), cityId: v.optional(cityId), equipped: outfit, demo: v.boolean(),
     displayName: v.optional(v.string()), onboardingCompletedAt: v.optional(v.number()),
     namespace: v.string(), catchCooldownUntil: v.optional(v.number()), catchCoolingDown: v.optional(v.boolean()),
   }).index('by_userId', ['userId']).index('by_handle', ['handle']).index('by_namespace', ['namespace']),
   flights: defineTable({
+    pigeonId: v.optional(v.id('pigeons')),
     senderId: v.id('profiles'), recipientId: v.id('profiles'), origin: city, destination: city,
     visibility, defense, distanceKm: v.number(), departedAt: v.number(), arrivesAt: v.number(),
     state: flightState, demo: v.boolean(), namespace: v.string(), requestKey: v.string(), openAcknowledged: v.optional(v.boolean()),
@@ -39,7 +42,7 @@ export default defineSchema({
     .index('by_flightId', ['flightId']).index('by_namespace', ['namespace']),
   catchAttempts: defineTable({
     flightId: v.id('flights'), catcherId: v.id('profiles'), namespace: v.string(), phases: v.array(v.number()),
-    startedAt: v.number(), expiresAt: v.number(), outcome: v.optional(outcome), hits: v.optional(v.array(v.boolean())),
+    startedAt: v.number(), expiresAt: v.number(), guarded: v.optional(v.boolean()), outcome: v.optional(outcome), hits: v.optional(v.array(v.boolean())),
     taps: v.optional(v.array(v.union(v.number(), v.null()))),
   }).index('by_flightId_and_catcherId', ['flightId', 'catcherId'])
     .index('by_namespace', ['namespace']),

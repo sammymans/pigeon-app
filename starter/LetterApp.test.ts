@@ -25,7 +25,7 @@ vi.mock('convex/react', () => ({
   },
 }));
 vi.mock('react-native', () => ({ View: 'view', Text: 'text' }));
-vi.mock('./ui', () => ({ Button: 'button', Link: 'link', Loading: 'loading', Notice: 'notice', s: {} }));
+vi.mock('./ui', () => ({ CityPicker: 'city-picker', Button: 'button', Link: 'link', Loading: 'loading', Notice: 'notice', s: {} }));
 vi.mock('./page03/atoms', () => ({ PageFrame: 'frame', usePageInsets: () => ({ top: 0, bottom: 0 }) }));
 vi.mock('./Onboarding', () => ({ FlockReady: 'ready', PhoneOnboarding: 'phone', ProfileOnboarding: 'profile' }));
 vi.mock('./Mailbox', () => ({ Mailbox: (props: { initialCompose: boolean; profile: { id: string } }) => {
@@ -39,9 +39,9 @@ const node = (type: string) => root().findByType(type as never);
 async function render() { await act(async () => { renderer = create(createElement(LetterApp, { deployment: 'https://test.invalid' })); }); }
 async function update() { await act(async () => { renderer.update(createElement(LetterApp, { deployment: 'https://test.invalid' })); }); }
 async function finish() {
-  await act(async () => { await node('profile').props.complete({ username: 'alice' }); });
+  await act(async () => { await node('profile').props.complete({ username: 'alice', displayName: 'Alice' }); });
   await update();
-  expect(node('ready').props.username).toBe('alice');
+  expect(node('ready').props.name).toBe('Alice');
 }
 
 beforeEach(() => {
@@ -84,9 +84,9 @@ describe('account-scoped onboarding navigation', () => {
     expect(node('mailbox').props.profile.id).toBe('a');
   });
 
-  it('opens home from the sky action and for an already-completed account', async () => {
-    await render(); await finish();
-    await act(async () => node('ready').props.onHome()); expect(node('mailbox').props.screen).toBe('home');
+  it('opens home for an already-completed account', async () => {
+    state.account = { ...state.account, status: 'complete' };
+    await render(); expect(node('mailbox').props.screen).toBe('home');
     await update(); expect(node('mailbox').props.screen).toBe('home');
   });
 });

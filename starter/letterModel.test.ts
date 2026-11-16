@@ -12,9 +12,9 @@ function legacySend(body: string) {
 
 describe('sealed drafts', () => {
   it('counts codepoints rather than UTF-16 code units', () => {
-    expect(codepoints('🐦'.repeat(280))).toBe(280);
-    expect(validDraft({ ...emptyDraft('b'), body: '🐦'.repeat(280) })).toBe(true);
-    expect(validDraft({ ...emptyDraft('b'), body: '🐦'.repeat(281) })).toBe(false);
+    expect(codepoints('🐦'.repeat(500))).toBe(500);
+    expect(validDraft({ ...emptyDraft('b'), body: '🐦'.repeat(500) })).toBe(true);
+    expect(validDraft({ ...emptyDraft('b'), body: '🐦'.repeat(501) })).toBe(false);
     expect(validDraft({ ...emptyDraft('b'), body: ' \n ' })).toBe(false);
   });
 
@@ -138,4 +138,14 @@ describe('server-authoritative delivery', () => {
     expect(routeEstimate(sender, { ...recipient, cityId: 'tokyo' }).demoSeconds).toBe(90);
     expect(routeEstimate(sender, sender).normalSeconds).toBe(120);
   });
+});
+
+it('persists the selected pigeon with the immutable retry payload', () => {
+  const draft = { ...emptyDraft('friend'), body: 'Hello', pigeonId: 'owned-bird', openAcknowledged: true };
+  const pending = sealDraft(draft, false, 'bird-send');
+  expect(pending.pending?.pigeonId).toBe('owned-bird');
+  expect(restoreDraft(JSON.stringify(pending), false)).toEqual(pending);
+  expect(() => restoreDraft(JSON.stringify({ ...pending, pigeonId: 'another-bird' }), false)).toThrow('could not be verified');
+  expect(() => editDraft(pending, { pigeonId: 'another-bird' })).toThrow('Confirm');
+  expect(editDraft(draft, { pigeonId: 'another-bird' }).openAcknowledged).toBe(false);
 });

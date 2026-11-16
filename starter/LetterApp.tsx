@@ -5,6 +5,7 @@ import { Component, useEffect, useState, type ReactNode } from 'react';
 import { Text, View } from 'react-native';
 import { api } from '../convex/_generated/api';
 import { Mailbox } from './Mailbox';
+import { HomeCity } from './MailSetup';
 import { FlockReady, PhoneOnboarding, ProfileOnboarding } from './Onboarding';
 import { onboardingRoute } from './onboardingModel';
 import { Button, Link, Loading, Notice, s } from './ui';
@@ -34,10 +35,11 @@ function AccountRouter({ deployment, onCatch, onReturn, status }: RoutingProps &
   const complete = useMutation(api.onboarding.complete);
   const [username, setUsername] = useState('');
   const availability = useQuery(api.onboarding.usernameAvailable, username ? { username } : 'skip');
-  const [ready, setReady] = useState<{ username: string; pigeons: { name: string }[] } | null>(null);
+  const [ready, setReady] = useState<{ name: string; pigeons: { name: string }[] } | null>(null);
   const [finishing, setFinishing] = useState(false);
   const [compose, setCompose] = useState(false);
   const [settings, setSettings] = useState(false);
+  const profile = useQuery(api.profiles.me, settings ? {} : 'skip');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const insets = usePageInsets();
@@ -53,11 +55,11 @@ function AccountRouter({ deployment, onCatch, onReturn, status }: RoutingProps &
   if (finishing && status.status === 'complete') return <View style={s.safe}><Loading label="Restoring your nest…" /></View>;
   if (status.status === 'profileRequired') return <><ProfileOnboarding availability={availability} checkUsername={setUsername} onBack={() => void leave()} complete={async values => {
     setFinishing(true);
-    try { const result = await complete(values); setReady({ username: result.username!, pigeons: result.pigeons }); }
+    try { const result = await complete(values); setReady({ name: values.displayName?.trim() || result.username!, pigeons: result.pigeons }); }
     finally { setFinishing(false); }
   }} />{error ? <Notice error>{error}</Notice> : null}</>;
-  if (ready) return <FlockReady {...ready} onCompose={() => { setCompose(true); setReady(null); }} onHome={() => { setCompose(false); setReady(null); }} />;
-  if (settings) return <PageFrame scroll style={{ paddingTop: insets.top, paddingBottom: insets.bottom, paddingHorizontal: 24, gap: 20 }}><Link label="Back to my flights" onPress={() => setSettings(false)} /><Text style={s.title}>Your account</Text><Text style={s.body}>@{(status?.status === 'complete' ? status.username : '')}</Text><Text style={s.small}>Your sign-in is saved on this device. Sign in again with the same verified number to return to your flock.</Text><Button label={busy ? 'Signing out…' : 'Sign out'} disabled={busy} onPress={() => void leave()} />{error ? <Notice error>{error}</Notice> : null}</PageFrame>;
+  if (ready) return <FlockReady {...ready} onCompose={() => { setCompose(true); setReady(null); }} />;
+  if (settings) return <PageFrame scroll style={{ paddingTop: insets.top, paddingBottom: insets.bottom, paddingHorizontal: 24, gap: 20 }}><Link label="Back to my flights" onPress={() => setSettings(false)} /><Text style={s.title}>Your account</Text><Text style={s.body}>@{(status?.status === 'complete' ? status.username : '')}</Text><HomeCity cityId={profile?.cityId} connected={connection.isWebSocketConnected} /><Text style={s.small}>Your sign-in is saved on this device. Sign in again with the same verified number to return to your flock.</Text><Button label={busy ? 'Signing out…' : 'Sign out'} disabled={busy} onPress={() => void leave()} />{error ? <Notice error>{error}</Notice> : null}</PageFrame>;
   return <Home deployment={deployment} connected={connection.isWebSocketConnected} initialCompose={compose} consumeCompose={setCompose} onCatch={onCatch} onReturn={onReturn} onMenu={() => setSettings(true)} />;
 }
 

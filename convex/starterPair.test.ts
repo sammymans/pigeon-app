@@ -361,17 +361,17 @@ describe('first-letter flight engine contract', () => {
     await expect(sender.mutation(api.flights.launch, { ...normalInput, demo: true })).rejects.toThrow('isolated flight mode');
   });
 
-  it('enforces 1–280 Unicode code points, preserves exact text, and rejects unconnected recipients', async () => {
+  it('enforces 1–500 Unicode code points, preserves exact text, and rejects unconnected recipients', async () => {
     const t = convexTest(schema, modules);
     const { sender, input } = await pair(t);
-    for (const body of ['', ' \n\t', 'a'.repeat(281), '🕊'.repeat(281), 'e\u0301'.repeat(141)]) {
-      await expect(sender.mutation(api.flights.launch, { ...input, body })).rejects.toThrow('280');
+    for (const body of ['', ' \n\t', 'a'.repeat(501), '🕊'.repeat(501), 'e\u0301'.repeat(251)]) {
+      await expect(sender.mutation(api.flights.launch, { ...input, body })).rejects.toThrow('500');
     }
     const { client: waiting } = await user(t);
     await waiting.mutation(api.starterPair.create, { handle: 'waiting', cityId: 'paris' });
     const waitingProfile = (await waiting.query(api.profiles.me, {}))!;
     await expect(waiting.mutation(api.flights.launch, { ...input, recipientId: waitingProfile.id })).rejects.toThrow('accepted friend');
-    const body = '🕊'.repeat(280);
+    const body = '🕊'.repeat(500);
     const result = await sender.mutation(api.flights.launch, { ...input, body });
     expect((await sender.query(api.flights.detail, result)).flight!.body).toBe(body);
     expect((await sender.query(api.flights.list, { scope: 'mine', demo: true })).flights).toHaveLength(1);

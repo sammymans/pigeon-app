@@ -1,10 +1,11 @@
 import { ConvexError } from 'convex/values';
-import { cityById, distanceKm, durationSeconds } from '../src/domain';
+import { cityById, distanceKm, durationSeconds, LETTER_CHARACTER_LIMIT } from '../src/domain';
 import type { LaunchInput } from '../src/domain';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import { areBlocked, opaqueToken, pairKey, requireSameNamespace } from './model';
+import { readCoop, saveCoop } from './coopModel';
 
 export async function changeSkyCount(ctx: MutationCtx, demo: boolean, delta: number, now: number) {
   const stats = await ctx.db.query('skyStats').withIndex('by_demo', (q) => q.eq('demo', demo)).unique();
@@ -42,7 +43,7 @@ export async function finishAttempt(ctx: MutationCtx, flight: Doc<'flights'>, at
 export async function launchFor(ctx: MutationCtx, sender: Doc<'profiles'>, input: LaunchInput): Promise<Id<'flights'>> {
   const now = Date.now();
   if (!input.requestKey.trim() || input.requestKey.length > 128) throw new ConvexError('A valid launch request key is required.');
-  if (!input.body.trim() || Array.from(input.body).length > 280) throw new ConvexError('Write a letter between 1 and 280 characters.');
+  if (!input.body.trim() || Array.from(input.body).length > LETTER_CHARACTER_LIMIT) throw new ConvexError('Write a letter between 1 and 500 characters.');
   if (input.visibility === 'open' && !input.openAcknowledged) throw new ConvexError('Acknowledge the Open Skies disclosure first.');
   if (input.demo !== sender.demo) throw new ConvexError('Use your account’s isolated flight mode.');
   const recipientId = ctx.db.normalizeId('profiles', input.recipientId);
@@ -50,7 +51,7 @@ export async function launchFor(ctx: MutationCtx, sender: Doc<'profiles'>, input
   const existing = await ctx.db.query('flights').withIndex('by_senderId_and_requestKey', (q) => q.eq('senderId', sender._id).eq('requestKey', input.requestKey)).unique();
   if (existing) {
     const message = await ctx.db.query('messages').withIndex('by_flightId', (q) => q.eq('flightId', existing._id)).unique();
-    if (existing.recipientId !== recipientId || existing.visibility !== input.visibility || existing.defense !== input.defense || existing.demo !== input.demo || (existing.openAcknowledged !== undefined && existing.openAcknowledged !== input.openAcknowledged) || message?.body !== input.body) throw new ConvexError('That request key belongs to a different letter.');
+    if (existing.recipientId !== recipientId || existing.pigeonId !== input.pigeonId || existing.visibility !== input.visibility || existing.defense !== input.defense || existing.demo !== input.demo || (existing.openAcknowledged !== undefined && existing.openAcknowledged !== input.openAcknowledged) || message?.body !== input.body) throw new ConvexError('That request key belongs to a different letter.');
     return existing._id;
   }
   const recipient = await ctx.db.get('profiles', recipientId);
@@ -61,21 +62,32 @@ export async function launchFor(ctx: MutationCtx, sender: Doc<'profiles'>, input
   if (connection?.state !== 'accepted') throw new ConvexError('Connect by invite or accepted request before sending a letter.');
   const active = await ctx.db.query('flights').withIndex('by_senderId_and_state', (q) => q.eq('senderId', sender._id).eq('state', 'in_flight')).take(4);
   let count = 0;
-  for (const flight of active) if ((await settleFlight(ctx, flight, now)).state === 'in_flight') count++;
+  for (const flight of active) {
+    if ((await settleFlight(ctx, flight, now)).state !== 'in_flight') continue;
+    if (input.pigeonId && flight.pigeonId === input.pigeonId) throw new ConvexError('This pigeon is already flying. Choose another from your flock.');
+    count++;
+  }
   if (count >= 3) throw new ConvexError('Three pigeons are already flying. Wait for one to arrive.');
+  const pigeonId = input.pigeonId ? ctx.db.normalizeId('pigeons', input.pigeonId) : null;
+  const pigeon = pigeonId ? await ctx.db.get('pigeons', pigeonId) : null;
+  if (input.pigeonId !== undefined && (!pigeon || pigeon.ownerId !== sender._id)) throw new ConvexError('Choose a pigeon from your own flock.');
   if (!sender.cityId || !recipient.cityId) throw new ConvexError('Both people must choose a city before sending a letter.');
   const origin = cityById(sender.cityId);
   const destination = cityById(recipient.cityId);
   const distance = distanceKm(origin, destination);
-  const arrivesAt = now + durationSeconds(distance, input.demo, input.defense) * 1000;
+  const wallet = await readCoop(ctx, sender, now);
+  const hasTreat = Boolean(pigeon && wallet.treatedBirds.includes(pigeon._id));
+  const arrivesAt = now + Math.ceil(durationSeconds(distance, input.demo, input.defense) * (hasTreat ? 0.9 : 1)) * 1000;
   const id = await ctx.db.insert('flights', {
     senderId: sender._id, recipientId, origin, destination, visibility: input.visibility, defense: input.defense,
     distanceKm: distance, departedAt: now, arrivesAt, state: 'in_flight', demo: input.demo,
-    namespace: sender.namespace, requestKey: input.requestKey, openAcknowledged: input.openAcknowledged, courier: 'Mochi',
+    namespace: sender.namespace, requestKey: input.requestKey, openAcknowledged: input.openAcknowledged, courier: pigeon?.name ?? 'Mochi',
+    ...(pigeon ? { pigeonId: pigeon._id } : {}),
     ...(input.visibility === 'open' ? { shareToken: opaqueToken() } : {}),
     attemptCount: 0, catchOpen: input.visibility === 'open', updatedAt: now, events: [{ at: now, label: 'Launched' }],
   });
   await ctx.db.insert('messages', { flightId: id, body: input.body, namespace: sender.namespace });
+  await saveCoop(ctx, sender, { ...wallet, points: wallet.points + 5, treatedBirds: hasTreat ? wallet.treatedBirds.filter(id => id !== pigeon!._id) : wallet.treatedBirds });
   await ctx.scheduler.runAt(arrivesAt, internal.flights.settle, { flightId: id });
   if (input.visibility === 'open') {
     await changeSkyCount(ctx, input.demo, 1, now);
@@ -97,6 +109,7 @@ export async function summaryProjection(ctx: QueryCtx, flight: Doc<'flights'>, v
   const recipient = role === 'sender' || role === 'recipient' ? await ctx.db.get('profiles', flight.recipientId) : null;
   return {
     id: flight._id, courier: flight.courier, origin: flight.origin, destination: flight.destination,
+    ...(role === 'sender' && flight.pigeonId ? { pigeonId: flight.pigeonId } : {}),
     visibility: flight.visibility, defense: flight.defense, distanceKm: flight.distanceKm,
     departedAt: flight.departedAt, arrivesAt: flight.arrivesAt, state: flight.state,
     outfit: sender?.equipped ?? 'classic' as const, demo: flight.demo, role, attemptCount: flight.attemptCount,
