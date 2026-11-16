@@ -72,7 +72,7 @@ function Home({ consumeCompose, ...props }: { deployment: string; connected: boo
   return <GameHome key={profile.id} profile={profile} {...props} />;
 }
 
-function GameHome({ profile, ...props }: Parameters<typeof Home>[0] & { profile: Profile }) {
+function GameHome({ profile, ...props }: Omit<Parameters<typeof Home>[0], 'consumeCompose'> & { profile: Profile }) {
   const [encounterId, setEncounterId] = useState<string | null>(null);
   const [openFlightId, setOpenFlightId] = useState<string>();
   const transport = useCatchTransport();

@@ -43,12 +43,13 @@ export class SlingshotSession {
         this.pending = rejected ? null : run;
         if (rejected) { this.queued = null; this.update({ preview: null, drag: null, armed: false, armedAt: null }); }
         this.update({ error: error instanceof ConvexError && typeof error.data === 'string' ? error.data : 'The server has not confirmed this action. Retry safely; a shot is never charged twice.' });
-      } finally { this.update({ busy: false }); }
+      } finally { if (!rejected) this.update({ busy: false }); }
       if (rejected && !this.snapshot.interrupted) {
         const requested = this.clock();
         try { this.accept(await this.transport.sync(this.flightId), requested, true); }
         catch { this.update({ error: 'The action was not accepted. Retry to refresh the encounter.' }); }
       }
+      if (rejected) this.update({ busy: false });
       if (this.snapshot.interrupted) void this.end();
       else if (!this.pending && this.queued) { const release = this.queued; this.queued = null; void this.fire(release); }
     };
@@ -135,8 +136,9 @@ export class SlingshotSession {
     const now = this.time();
     this.update({ now });
     const encounter = this.snapshot.data?.encounter;
-    if (!this.available || !encounter || isFinished(encounter.state) || this.snapshot.busy || this.syncing || this.pending || now < this.nextSync) return;
-    const due = encounter.shots.find(shot => shot.outcome === 'flying')?.endsAt ?? encounter.fireUntil ?? encounter.readyUntil;
+    if (!this.available || isFinished(encounter?.state) || this.snapshot.busy || this.syncing || this.pending || now < this.nextSync) return;
+    const due = encounter ? encounter.shots.find(shot => shot.outcome === 'flying')?.endsAt ?? encounter.fireUntil ?? encounter.readyUntil : this.snapshot.data?.pouch.nextRefillAt;
+    if (due == null) return;
     if (now < due + 30) return;
     this.nextSync = now + 250;
     this.syncing = true;

@@ -127,4 +127,16 @@ describe('monotonic slingshot gesture and submission controller', () => {
     expect(session.getSnapshot().preview).toBeNull();
     expect(session.getSnapshot().data?.pouch.count).toBe(5);
   });
+  it('blocks another gesture while a definitive rejection is being reconciled', async () => {
+    const { session, transport, move, data } = setup(); await session.load();
+    let recover!: (value: GameData) => void;
+    transport.arm.mockRejectedValueOnce(new ConvexError('Timing rejected.'));
+    transport.sync.mockImplementationOnce(() => new Promise(resolve => { recover = resolve; }));
+    session.begin(SCENE.fork); move(0, 50); await flush();
+    expect(session.getSnapshot().busy).toBe(true);
+    expect(session.begin(SCENE.fork)).toBe(false);
+    recover(data()); await flush();
+    expect(session.getSnapshot().busy).toBe(false);
+    expect(session.begin(SCENE.fork)).toBe(true);
+  });
 });

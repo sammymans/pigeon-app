@@ -24,6 +24,39 @@ beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-15T22:
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
 
 describe('server-authoritative slingshot encounter', () => {
+  it('keeps V1 eligibility separate from the legacy cutoff and revalidates privacy and prior attempts', async () => {
+    const { t, a, b, c, d, profiles, flight } = await setup();
+    expect((await c.query(api.flights.detail, flight)).flight?.canSlingshot).toBe(true);
+    expect((await a.query(api.flights.detail, flight)).flight?.canSlingshot).toBe(false);
+    expect((await b.query(api.flights.detail, flight)).flight?.canSlingshot).toBe(false);
+    expect((await t.query(api.flights.detail, flight)).flight?.canSlingshot).toBe(false);
+    await expect(a.mutation(api.slingshot.prepare, { flightId: flight.id })).rejects.toThrow('cannot be intercepted');
+    await expect(b.mutation(api.slingshot.prepare, { flightId: flight.id })).rejects.toThrow('cannot be intercepted');
+    await t.run(ctx => ctx.db.patch('profiles', profiles[3].id, { namespace: 'isolated:other' }));
+    expect((await d.query(api.flights.detail, flight)).flight?.canSlingshot).toBe(false);
+    await expect(d.mutation(api.slingshot.prepare, { flightId: flight.id })).rejects.toThrow('cannot be intercepted');
+    await t.run(ctx => ctx.db.patch('flights', flight.id, { catchOpen: false, arrivesAt: Date.now() + 14_000 }));
+    const detail = (await c.query(api.flights.detail, flight)).flight!;
+    expect(detail.canCatch).toBe(false); expect(detail.canSlingshot).toBe(true);
+    const game = await c.mutation(api.slingshot.prepare, { flightId: flight.id });
+    expect((await c.query(api.flights.detail, flight)).flight?.canSlingshot).toBe(false);
+    await c.mutation(api.slingshot.end, { encounterId: game.encounter!.id });
+    expect((await c.query(api.flights.detail, flight)).flight?.canSlingshot).toBe(false);
+    await expect(c.mutation(api.flights.reserve, { flightId: flight.id })).rejects.toThrow('already attempted');
+  });
+  it('rejects a release exactly at the deadline without spending and settles arrival without a client poll', async () => {
+    const { t, c, flight } = await setup();
+    const e = (await c.mutation(api.slingshot.prepare, { flightId: flight.id })).encounter!;
+    await c.mutation(api.slingshot.arm, { encounterId: e.id, armedElapsedMs: 0 });
+    vi.setSystemTime(e.preparedAt + 10_000);
+    await expect(c.mutation(api.slingshot.fire, { encounterId: e.id, shotKey: 'too-late', releaseElapsedMs: 10_000, direction: { x: 0, y: -1 } })).rejects.toThrow('cannot fire');
+    expect((await c.query(api.stones.status, {})).count).toBe(6);
+    await t.run(ctx => ctx.db.patch('flights', flight.id, { arrivesAt: Date.now() }));
+    await t.mutation(internal.flights.settle, { flightId: flight.id });
+    const stored = await t.run(ctx => ctx.db.get('flights', flight.id));
+    expect(stored?.activeEncounterId).toBeUndefined();
+    expect((await c.query(api.slingshot.state, { flightId: flight.id })).encounter?.state).toBe('delivered');
+  });
   it('reserves once across concurrent catchers and keeps old/new catch engines mutually exclusive', async () => {
     const { c, d, flight } = await setup();
     const results = await Promise.allSettled([c.mutation(api.slingshot.prepare, { flightId: flight.id }), d.mutation(api.slingshot.prepare, { flightId: flight.id })]);

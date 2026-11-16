@@ -107,7 +107,10 @@ export const prepare = mutation({ args: { flightId: v.string() }, returns: respo
   if (flight.activeAttemptId) {
     const legacy = await ctx.db.get('catchAttempts', flight.activeAttemptId);
     if (legacy && !legacy.outcome && legacy.expiresAt > now) throw new ConvexError('Another interception is in progress.');
-    if (legacy && !legacy.outcome) await finishAttempt(ctx, flight, legacy, 'expired', [false, false, false], now);
+    if (legacy && !legacy.outcome) {
+      await finishAttempt(ctx, flight, legacy, 'expired', [false, false, false], now);
+      flight = (await ctx.db.get('flights', flight._id))!;
+    }
   }
   if (flight.activeEncounterId) {
     const existing = await ctx.db.get('slingshotEncounters', flight.activeEncounterId);
