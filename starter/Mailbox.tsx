@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from 'convex/react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { api } from '../convex/_generated/api';
 import { cityById, durationSeconds, formatDuration, OPEN_SKIES_DISCLOSURE, type FlightSummary, type Profile } from '../src/domain';
@@ -17,7 +17,7 @@ import { skyMapData } from './page03/mapData';
 type Page = { screen: 'postbox' } | { screen: 'compose'; reply?: boolean } | { screen: 'detail'; id: string; sent?: boolean };
 type DraftController = ReturnType<typeof useDraft>;
 
-export function Mailbox({ profile, deployment, connected, initialCompose = false, onCatch, onReturn, onNavigate, onMenu }: { profile: Profile; deployment: string; connected: boolean; initialCompose?: boolean; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void; onNavigate: () => void; onMenu?: () => void }) {
+export function Mailbox({ profile, deployment, connected, initialCompose = false, openFlightId, onOpenFlightHandled, onCatch, onReturn, onNavigate, onMenu }: { profile: Profile; deployment: string; connected: boolean; initialCompose?: boolean; openFlightId?: string; onOpenFlightHandled?: () => void; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void; onNavigate: () => void; onMenu?: () => void }) {
   const connections = useQuery(api.social.list, {});
   const account = useQuery(api.onboarding.status, profile.demo ? 'skip' : {});
   const flights = useQuery(api.flights.list, { scope: 'mine', demo: profile.demo });
@@ -37,6 +37,19 @@ export function Mailbox({ profile, deployment, connected, initialCompose = false
   const world = useQuery(api.flights.list, scope === 'world' ? { scope: 'world', demo: profile.demo } : 'skip');
   const mapFlights = visibleFlights((scope === 'mine' ? flights : world)?.flights ?? [], scope);
   const selectedFlight = mapFlights.find((flight) => flight.id === selected) ?? mapFlights[0];
+
+  const handledFlight = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!openFlightId) { handledFlight.current = undefined; return; }
+    if (handledFlight.current === openFlightId || draft.busy) return;
+    handledFlight.current = openFlightId;
+    setInbox(false);
+    setScope('mine');
+    setFlock(false);
+    setSelected(openFlightId);
+    setPage({ screen: 'detail', id: openFlightId });
+    onOpenFlightHandled?.();
+  }, [openFlightId, draft.busy, onOpenFlightHandled]);
 
   function go(next: Page) {
     setPage(next);
