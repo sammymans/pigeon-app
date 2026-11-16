@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { exportPKCS8, generateKeyPair } from 'jose';
+import { decodeJwt, exportPKCS8, generateKeyPair } from 'jose';
 import { api, internal } from './_generated/api';
 import { normalizePhone } from './phoneProtocol';
 import schema from './schema';
@@ -17,6 +17,11 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers(); });
 
 describe('phone verification boundary', () => {
+  it('rejects legacy password signup before an unverified account can be created', async () => {
+    const t = convexTest(schema, modules);
+    await expect(t.action(api.auth.signIn, { provider: 'password', params: { email: 'new@example.test', password: 'test-password-only', flow: 'signUp' } })).rejects.toThrow('verify a phone');
+    expect(await t.run(ctx => ctx.db.query('users').collect())).toHaveLength(0);
+  });
   it('normalizes E.164 and fails closed without configured SMS', async () => {
     expect(normalizePhone('+1 (415) 555-0123')).toBe(phone);
     expect(() => normalizePhone('4155550123')).toThrow('country code');
@@ -74,7 +79,10 @@ describe('phone verification boundary', () => {
     expect(await t.run(ctx => ctx.db.query('users').collect())).toHaveLength(2);
     const newPhone = '+14155550789';
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: 'approved', to: newPhone }))));
-    await t.action(api.auth.signIn, { provider: 'phone', params: { phone: newPhone, code: '123456' } });
+    const signedIn = await t.action(api.auth.signIn, { provider: 'phone', params: { phone: newPhone, code: '123456' } });
+    expect(signedIn.tokens?.refreshToken).toBeTruthy();
+    const refreshed = await t.action(api.auth.signIn, { refreshToken: signedIn.tokens!.refreshToken });
+    expect(decodeJwt(refreshed.tokens!.token).sub).toBe(decodeJwt(signedIn.tokens!.token).sub);
     const users = await t.run(ctx => ctx.db.query('users').collect());
     expect(users).toHaveLength(3);
     expect(users.find(user => user.phone === newPhone)?.phoneVerificationTime).toBeDefined();

@@ -75,7 +75,7 @@ export async function launchFor(ctx: MutationCtx, sender: Doc<'profiles'>, input
   const id = await ctx.db.insert('flights', {
     senderId: sender._id, recipientId, origin, destination, visibility: input.visibility, defense: input.defense,
     distanceKm: distance, departedAt: now, arrivesAt, state: 'in_flight', demo: input.demo,
-    namespace: sender.namespace, requestKey: input.requestKey, openAcknowledged: input.openAcknowledged, courier: sender.onboardingCompletedAt !== undefined ? 'Mochi' : ['Pip', 'Coo', 'Mochi', 'Bean', 'Postie'][Math.floor(Math.random() * 5)],
+    namespace: sender.namespace, requestKey: input.requestKey, openAcknowledged: input.openAcknowledged, courier: 'Mochi',
     ...(input.visibility === 'open' ? { shareToken: opaqueToken() } : {}),
     attemptCount: 0, catchOpen: input.visibility === 'open', updatedAt: now, events: [{ at: now, label: 'Launched' }],
   });

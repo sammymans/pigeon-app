@@ -1,6 +1,7 @@
 import { useAuthActions } from '@convex-dev/auth/react';
 import { useAction, useConvexAuth, useConvexConnectionState, useMutation, useQuery } from 'convex/react';
-import { Component, useState, type ReactNode } from 'react';
+import type { FunctionReturnType } from 'convex/server';
+import { Component, useEffect, useState, type ReactNode } from 'react';
 import { Text, View } from 'react-native';
 import { api } from '../convex/_generated/api';
 import type { Profile } from '../src/domain';
@@ -13,18 +14,29 @@ import { CatchGame } from './game/CatchGame';
 import { useCatchTransport } from './game/useCatchTransport';
 
 export function LetterApp(props: { deployment: string; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void }) {
-  return <QueryBoundary><AccountRouter {...props} /></QueryBoundary>;
+  return <QueryBoundary><AuthGate {...props} /></QueryBoundary>;
 }
 
-function AccountRouter({ deployment, onCatch, onReturn }: { deployment: string; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void }) {
+type RoutingProps = { deployment: string; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void };
+type AccountStatus = Exclude<FunctionReturnType<typeof api.onboarding.status>, { status: 'signedOut' }>;
+
+function AuthGate(props: RoutingProps) {
   const { isAuthenticated, isLoading } = useConvexAuth();
-  const { signIn, signOut } = useAuthActions();
-  const connection = useConvexConnectionState();
+  const { signIn } = useAuthActions();
   const sendCode = useAction(api.phoneAuth.sendCode);
   const status = useQuery(api.onboarding.status, isAuthenticated ? {} : 'skip');
+  const route = onboardingRoute(isLoading, isAuthenticated, status?.status);
+  if (route === 'loading') return <View style={s.safe}><Loading label="Restoring your nest…" /></View>;
+  if (route === 'phone' || !status || status.status === 'signedOut') return <PhoneOnboarding sendCode={phone => sendCode({ phone })} verifyCode={(phone, code) => signIn('phone', { phone, code })} />;
+  return <AccountRouter key={status.accountId} status={status} {...props} />;
+}
+
+function AccountRouter({ deployment, onCatch, onReturn, status }: RoutingProps & { status: AccountStatus }) {
+  const { signOut } = useAuthActions();
+  const connection = useConvexConnectionState();
   const complete = useMutation(api.onboarding.complete);
   const [username, setUsername] = useState('');
-  const availability = useQuery(api.onboarding.usernameAvailable, isAuthenticated && username ? { username } : 'skip');
+  const availability = useQuery(api.onboarding.usernameAvailable, username ? { username } : 'skip');
   const [ready, setReady] = useState<{ username: string; pigeons: { name: string }[] } | null>(null);
   const [finishing, setFinishing] = useState(false);
   const [compose, setCompose] = useState(false);
@@ -32,7 +44,6 @@ function AccountRouter({ deployment, onCatch, onReturn }: { deployment: string; 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const insets = usePageInsets();
-  const route = onboardingRoute(isLoading, isAuthenticated, status?.status);
 
   async function leave() {
     if (busy) return;
@@ -42,20 +53,20 @@ function AccountRouter({ deployment, onCatch, onReturn }: { deployment: string; 
     finally { setBusy(false); }
   }
 
-  if (route === 'loading' || (finishing && route === 'home')) return <View style={s.safe}><Loading label="Restoring your nest…" /></View>;
-  if (route === 'phone') return <PhoneOnboarding sendCode={phone => sendCode({ phone })} verifyCode={(phone, code) => signIn('phone', { phone, code })} />;
-  if (route === 'profile') return <><ProfileOnboarding availability={availability} checkUsername={setUsername} onBack={() => void leave()} complete={async values => {
+  if (finishing && status.status === 'complete') return <View style={s.safe}><Loading label="Restoring your nest…" /></View>;
+  if (status.status === 'profileRequired') return <><ProfileOnboarding availability={availability} checkUsername={setUsername} onBack={() => void leave()} complete={async values => {
     setFinishing(true);
     try { const result = await complete(values); setReady({ username: result.username!, pigeons: result.pigeons }); }
     finally { setFinishing(false); }
   }} />{error ? <Notice error>{error}</Notice> : null}</>;
   if (ready) return <FlockReady {...ready} onCompose={() => { setCompose(true); setReady(null); }} onHome={() => { setCompose(false); setReady(null); }} />;
   if (settings) return <PageFrame scroll style={{ paddingTop: insets.top, paddingBottom: insets.bottom, paddingHorizontal: 24, gap: 20 }}><Link label="Back to my flights" onPress={() => setSettings(false)} /><Text style={s.title}>Your account</Text><Text style={s.body}>@{(status?.status === 'complete' ? status.username : '')}</Text><Text style={s.small}>Your sign-in is saved on this device. Sign in again with the same verified number to return to your flock.</Text><Button label={busy ? 'Signing out…' : 'Sign out'} disabled={busy} onPress={() => void leave()} />{error ? <Notice error>{error}</Notice> : null}</PageFrame>;
-  return <Home deployment={deployment} connected={connection.isWebSocketConnected} initialCompose={compose} onCatch={onCatch} onReturn={onReturn} onMenu={() => setSettings(true)} />;
+  return <Home deployment={deployment} connected={connection.isWebSocketConnected} initialCompose={compose} consumeCompose={setCompose} onCatch={onCatch} onReturn={onReturn} onMenu={() => setSettings(true)} />;
 }
 
-function Home(props: { deployment: string; connected: boolean; initialCompose: boolean; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void; onMenu: () => void }) {
+function Home({ consumeCompose, ...props }: { deployment: string; connected: boolean; initialCompose: boolean; consumeCompose: (value: boolean) => void; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void; onMenu: () => void }) {
   const profile = useQuery(api.profiles.me, {});
+  useEffect(() => { if (profile && props.initialCompose) consumeCompose(false); }, [profile, props.initialCompose, consumeCompose]);
   if (profile === undefined) return <Loading label="Finding your nest…" />;
   if (!profile) return <Notice error>Your profile could not be loaded. Please reopen the app to retry.</Notice>;
   return <GameHome key={profile.id} profile={profile} {...props} />;
