@@ -45,6 +45,6 @@ The existing `EXPO_PUBLIC_CONVEX_URL` still determines the post-office connectio
 - [Google Android Maps SDK usage and billing](https://developers.google.com/maps/documentation/android-sdk/usage-and-billing) and [SKU pricing](https://developers.google.com/maps/billing-and-pricing/pricing)
 - [Mapbox React Native installation](https://rnmapbox.github.io/docs/install), [MAU accounting](https://docs.mapbox.com/help/glossary/monthly-active-users/) and [published pricing](https://www.mapbox.com/pricing)
 - [MapLibre Expo restrictions](https://maplibre.org/maplibre-react-native/docs/setup/expo/), [wrapper license](https://github.com/maplibre/maplibre-react-native) and [MapTiler integration](https://docs.maptiler.com/react-native/)
-- [MapTiler plans and usage rates](https://www.maptiler.com/cloud/pricing/)
+- [MapTiler plans and usage rates](https://www.maptiler.com/cloud/pricing/) and [sessions versus requests](https://docs.maptiler.com/guides/account/sessions-vs-requests/)
 
 Prices are the published model at the decision date, not a forecast of this app's bill.

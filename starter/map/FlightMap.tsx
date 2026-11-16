@@ -1,6 +1,6 @@
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import { flightProgress } from '../../src/ui/flightGeometry';
 import { a, palette } from '../page03/atoms';
@@ -75,18 +75,17 @@ export function FlightMap({ flights, selected, serverNow, scope, fitRequest, onS
       onMapReady={() => { setReady(true); setSlow(false); }}
     >
       {routes.flatMap(route => splitAtDateline(route.coordinates).map((coordinates, index) => <Polyline key={`${route.id}-${index}`} coordinates={coordinates} strokeColor={selected === null || route.id === selected ? palette.blue : '#91A8D2'} strokeWidth={route.id === selected ? 3 : 2} lineDashPattern={[5, 8]} />))}
-      {flights.flatMap(flight => flight.id === selected ? [flight.origin, flight.destination].map((city, index) => <Marker key={`${flight.id}-endpoint-${index}`} coordinate={{ latitude: city.lat, longitude: city.lng }} anchor={{ x: 0.5, y: 0.5 }} image={require('./assets/endpoint.png')} tappable={false} />) : [])}
+      {flights.flatMap(flight => flight.id === selected ? [flight.origin, flight.destination].map((city, index) => <Marker key={`${flight.id}-endpoint-${index}`} coordinate={{ latitude: city.lat, longitude: city.lng }} anchor={{ x: 0.5, y: 0.5 }} tappable={false}><Image source={require('./assets/endpoint.png')} style={{ width: 16, height: 16 }} /></Marker>) : [])}
       {serverNow !== null && flights.map(flight => <Marker
         key={flight.id}
         identifier={flight.id}
         coordinate={flightCoordinate(flight, flightProgress(flight, serverNow))}
         anchor={{ x: 0.5, y: 0.5 }}
-        image={flight.id === selected ? require('./assets/pigeon-selected.png') : require('./assets/pigeon.png')}
         title={`${flight.courier}: ${flight.origin.name} to ${flight.destination.name}`}
         accessibilityLabel={`Select ${flight.courier}, ${flight.origin.name} to ${flight.destination.name}`}
         zIndex={flight.id === selected ? 2 : 1}
         onPress={event => { event.stopPropagation(); onSelect(flight.id); }}
-      />)}
+      ><Image source={flight.id === selected ? require('./assets/pigeon-selected.png') : require('./assets/pigeon.png')} style={{ width: 56, height: 56 }} /></Marker>)}
     </MapView>
     {!ready && <View pointerEvents="box-none" style={styles.loading}><View style={styles.loadingCard}><ActivityIndicator color={palette.blue} /><Text style={a.small}>{slow ? 'Basemap taking longer than expected. Check your connection; the flight list still works.' : 'Opening the map…'}</Text>{slow && <Pressable accessibilityRole="button" onPress={() => { setSlow(false); setAttempt(value => value + 1); lastFit.current.request = -1; }} style={styles.retry}><Text style={styles.retryText}>Retry basemap</Text></Pressable>}</View></View>}
   </View>;
