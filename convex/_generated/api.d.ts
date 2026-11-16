@@ -26,6 +26,8 @@ import type * as slingshot from "../slingshot.js";
 import type * as slingshotSchema from "../slingshotSchema.js";
 import type * as stones from "../stones.js";
 import type * as social from "../social.js";
+import type * as shop from "../shop.js";
+import type * as shopCatalog from "../shopCatalog.js";
 import type * as starterDemo from "../starterDemo.js";
 import type * as starterPair from "../starterPair.js";
 import type * as validators from "../validators.js";
@@ -58,6 +60,8 @@ declare const fullApi: ApiFromModules<{
   slingshotSchema: typeof slingshotSchema;
   stones: typeof stones;
   social: typeof social;
+  shop: typeof shop;
+  shopCatalog: typeof shopCatalog;
   starterDemo: typeof starterDemo;
   starterPair: typeof starterPair;
   validators: typeof validators;
