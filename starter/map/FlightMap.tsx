@@ -56,9 +56,9 @@ export function FlightMap({ flights, selected, serverNow, scope, fitRequest, onS
       mapType={Platform.OS === 'ios' ? 'mutedStandard' : 'standard'}
       customMapStyle={Platform.OS === 'android' ? calmStyle : undefined}
       userInterfaceStyle="light"
-      minZoomLevel={1}
+      minZoomLevel={0}
       maxZoomLevel={12}
-      cameraZoomRange={{ minCenterCoordinateDistance: 8000, maxCenterCoordinateDistance: 40000000 }}
+      cameraZoomRange={{ minCenterCoordinateDistance: 8000 }}
       showsUserLocation={false}
       showsMyLocationButton={false}
       showsPointsOfInterests={false}

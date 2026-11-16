@@ -69,10 +69,12 @@ export function fitRegion(coordinates: Coordinate[], width: number, height: numb
   const spanY = Math.max(0.8 * radians, Math.max(...ys) - Math.min(...ys));
   const scale = Math.max(spanX / Math.max(1, width - 100), spanY / Math.max(1, height - 120));
   const halfY = Math.min(Math.PI, scale * Math.max(1, height) / 2);
+  const north = Math.min(85, inverse(centerY + halfY));
+  const south = Math.max(-85, inverse(centerY - halfY));
   return {
-    latitude: Math.max(-75, Math.min(75, inverse(centerY))),
+    latitude: (north + south) / 2,
     longitude: wrapLongitude(start + (360 - largestGap) / 2),
-    latitudeDelta: Math.min(160, inverse(centerY + halfY) - inverse(centerY - halfY)),
+    latitudeDelta: Math.min(160, north - south),
     longitudeDelta: Math.min(350, scale * Math.max(1, width) / radians),
   };
 }

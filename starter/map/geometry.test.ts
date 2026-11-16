@@ -62,4 +62,12 @@ describe('flight framing', () => {
       expect(region.longitudeDelta).toBeLessThanOrEqual(350);
     }
   });
+
+  it('fits a global set without requesting a region beyond either pole', () => {
+    const points = cities.flatMap((origin, i) => routeCoordinates({ origin, destination: cities[(i + 4) % cities.length] }));
+    const region = fitRegion(points, 393, 448);
+    expect(region.latitude + region.latitudeDelta / 2).toBeLessThanOrEqual(85);
+    expect(region.latitude - region.latitudeDelta / 2).toBeGreaterThanOrEqual(-85);
+    for (const point of points) expect(Math.abs(point.latitude - region.latitude)).toBeLessThan(region.latitudeDelta / 2);
+  });
 });
