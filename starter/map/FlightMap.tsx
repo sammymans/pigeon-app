@@ -40,8 +40,13 @@ export function FlightMap({ flights, selected, serverNow, scope, fitRequest, onS
     const changedScope = previous.scope !== scope;
     if (!requested && !changedScope && (previous.hadFlights || !flights.length)) return;
     const targets = requested && selected ? routes.filter(route => route.id === selected) : routes;
-    const region = fitRegion(targets.flatMap(route => route.coordinates), size.width, size.height);
-    map.current?.animateToRegion(region, 450);
+    const coordinates = targets.flatMap(route => route.coordinates);
+    const region = fitRegion(coordinates, size.width, size.height);
+    const longitudes = coordinates.map(point => point.longitude);
+    const crossesDateline = Math.max(...longitudes) - Math.min(...longitudes) > 180 && region.longitudeDelta < 180;
+    const sameCity = coordinates.length > 0 && coordinates.every(point => Math.abs(point.latitude - coordinates[0].latitude) < 0.001 && Math.abs(point.longitude - coordinates[0].longitude) < 0.001);
+    if (!coordinates.length || crossesDateline || sameCity) map.current?.animateToRegion(region, 450);
+    else map.current?.fitToCoordinates(coordinates, { edgePadding: { top: 65, right: 42, bottom: 92, left: 42 }, animated: true });
     lastFit.current = { scope, request: fitRequest, hadFlights: flights.length > 0 };
   }, [ready, size, scope, fitRequest, selected, flights.length, routes]);
 
