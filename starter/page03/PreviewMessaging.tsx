@@ -11,7 +11,7 @@ export type PreviewDraft = { body: string; recipientId: string; pigeonId: string
 export const blankPreviewDraft: PreviewDraft = { body: '', recipientId: '', pigeonId: '', hideName: false };
 
 export function PreviewMessaging({ senderName = 'You', letters, birds, draft, now, initialCompose, onDraft, onOpened, onClose, onSend }: { senderName?: string; letters: PreviewLetter[]; birds: FlockBird[]; draft: PreviewDraft; now: number; initialCompose?: boolean; onDraft: (draft: PreviewDraft) => void; onOpened: (id: string) => void; onClose: () => void; onSend: (person: MailPerson, courier: string, pigeonId?: string) => void }) {
-  const people = groupMailboxes([...previewPeople, ...(letters.some(letter => letter.personId === 'nearby') ? [nearbyPerson] : [])], letters);
+  const people = groupMailboxes([...previewPeople, nearbyPerson], letters).filter(person => person.letters.length > 0);
   const [personId, setPersonId] = useState<string | null>(null);
   const [reading, setReading] = useState<string | null>(null);
   const [step, setStep] = useState<'browse' | 'compose' | 'recipient' | 'review'>(initialCompose ? 'compose' : 'browse');

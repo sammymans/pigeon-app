@@ -1,7 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import { onboardingRoute, phoneNumber, resendSeconds, smsCode, usernameValue, validUsername } from './onboardingModel';
+import { formatPhoneNumber, onboardingRoute, phoneNumber, resendSeconds, smsCode, usernameValue, validUsername } from './onboardingModel';
 
 describe('phone onboarding inputs', () => {
+  it('formats typing and backspacing without leaving trailing separators', () => {
+    let value = '';
+    const expected = ['(4', '(41', '(415', '(415) 5', '(415) 55', '(415) 555', '(415) 555-0', '(415) 555-01', '(415) 555-012', '(415) 555-0126'];
+    for (const [index, digit] of [...'4155550126'].entries()) {
+      value = formatPhoneNumber('+1', value + digit);
+      expect(value).toBe(expected[index]);
+    }
+    for (let index = expected.length - 2; index >= -1; index--) {
+      value = formatPhoneNumber('+1', value.slice(0, -1));
+      expect(value).toBe(expected[index] ?? '');
+    }
+  });
+  it('formats pasted numbers and submits the original digits only once', () => {
+    for (const value of ['4155550126', '(415) 555-0126', '+1 (415) 555-0126', '1-415-555-0126']) {
+      const formatted = formatPhoneNumber('+1', value);
+      expect(formatted).toBe('(415) 555-0126');
+      expect(phoneNumber('+1', formatted)).toBe('+14155550126');
+    }
+    expect(formatPhoneNumber('+1', '41555501267')).toBe('(415) 555-0126');
+    expect(formatPhoneNumber('+1', '(415) 555-9126')).toBe('(415) 555-9126');
+    expect(formatPhoneNumber('+1', '')).toBe('');
+  });
+  it('preserves other national numbers without applying the +1 mask', () => {
+    expect(formatPhoneNumber('+44', '7700 900123')).toBe('7700900123');
+    expect(formatPhoneNumber('+44', '+44 7700 900123')).toBe('7700900123');
+    expect(formatPhoneNumber('+44', '(415) 555-0126')).toBe('4155550126');
+  });
   it('normalizes a calling code and formatted national number without accepting ambiguous text', () => {
     expect(phoneNumber('+1', '(415) 555-0126')).toBe('+14155550126');
     expect(phoneNumber('+44', '7700 900123')).toBe('+447700900123');

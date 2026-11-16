@@ -74,10 +74,10 @@ describe('account-scoped onboarding navigation', () => {
     expect(node('mailbox').props.screen).toBe('home');
   });
 
-  it('consumes first-compose only after profile loading and does not replay it after settings', async () => {
+  it('opens the map after onboarding and keeps it as the home screen after settings', async () => {
     await render(); await finish(); state.profileLoaded = false;
-    await act(async () => node('ready').props.onCompose()); expect(node('loading')).toBeTruthy();
-    state.profileLoaded = true; await update(); expect(node('mailbox').props.screen).toBe('compose');
+    await act(async () => node('ready').props.onOpenMap()); expect(node('loading')).toBeTruthy();
+    state.profileLoaded = true; await update(); expect(node('mailbox').props.screen).toBe('home');
     await act(async () => node('mailbox').props.onMenu());
     await act(async () => node('link').props.onPress());
     expect(node('mailbox').props.screen).toBe('home');

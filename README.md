@@ -1,6 +1,6 @@
 # Pigeon first letters
 
-The app currently opens a temporary click-through onboarding preview: enter any phone number and verification code, choose any username, and continue through the flock welcome to the sample app. Fields can also be left blank. No SMS, account, or real letter is created; everything resets on reload. Use **Restart onboarding** in the map menu to try it again.
+The app currently opens a temporary click-through onboarding preview: enter any phone number and verification code, choose a username, and continue through the flock welcome to the sample app. Phone and code fields can be left blank; usernames require 3–24 ASCII letters, numbers, dots, or underscores and cannot start with a dot. Usernames are trimmed and lowercased, with an optional leading `@` removed. Availability is only checked in connected sign-in. No SMS, account, or real letter is created; everything resets on reload. Use **Restart onboarding** in the map menu to try it again.
 
 Set `EXPO_PUBLIC_ONBOARDING_PREVIEW=false` to restore connected phone sign-in and real flock/flight data. See [phone authentication setup](docs/phone-auth.md): live SMS still requires server configuration and approved legal URLs. First real send includes an explicit home-city choice and private friend invitations.
 

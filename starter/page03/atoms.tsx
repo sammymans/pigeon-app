@@ -21,7 +21,7 @@ export function usePageInsets() {
 }
 
 export function PageFrame({ children, scroll = false, style }: { children: ReactNode; scroll?: boolean; style?: StyleProp<ViewStyle> }) {
-  return <View style={a.frame}>{scroll ? <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[{ flexGrow: 1 }, style]}>{children}</ScrollView> : <View style={[{ flex: 1 }, style]}>{children}</View>}</View>;
+  return <View style={a.frame}>{scroll ? <ScrollView style={a.scroll} nestedScrollEnabled keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[{ flexGrow: 1 }, style]}>{children}</ScrollView> : <View style={[a.content, style]}>{children}</View>}</View>;
 }
 
 export type IconName = 'close' | 'back' | 'arrow' | 'plus' | 'mail' | 'more' | 'check' | 'search' | 'phone' | 'nearby' | 'lock' | 'compose' | 'down' | 'coop';
@@ -56,7 +56,10 @@ export function Handle({ onPress, label = 'Expand your flock' }: { onPress?: () 
 export function InlineMessage({ children, error = false }: { children: ReactNode; error?: boolean }) { return <Text accessibilityRole={error ? 'alert' : undefined} style={[a.body, { marginHorizontal: 24, marginVertical: 8, color: error ? '#AE3046' : palette.muted }]}>{children}</Text>; }
 
 export const a = StyleSheet.create({
-  frame: { flex: 1, width: '100%', maxWidth: 480, alignSelf: 'center', backgroundColor: 'white' },
+  content: { flex: 1, minHeight: 0 },
+  scroll: { flex: 1, minHeight: 0 },
+  horizontalScroll: { flexGrow: 0, flexShrink: 0, minWidth: 0 },
+  frame: { flex: 1, minHeight: 0, overflow: 'hidden', width: '100%', maxWidth: 480, alignSelf: 'center', backgroundColor: 'white' },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: 'white' },
   header: { height: 70, paddingHorizontal: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 },
   heading: { fontFamily: font.heading, fontSize: 26, lineHeight: 32, letterSpacing: -0.78, color: '#000' },

@@ -3,12 +3,13 @@ import { flightProgress } from '../../src/ui/flightGeometry';
 
 export type Coordinate = { latitude: number; longitude: number };
 export type SkyMapData = {
+  nearby?: { center: Coordinate; radiusKm: number; locationKnown: boolean };
   focusKey: string;
   focusCoordinates: Coordinate[];
   routes: { id: string; coordinates: Coordinate[]; selected: boolean; origin: City; destination: City }[];
   markers: { id: string; coordinate: Coordinate; selected: boolean; label: string }[];
 };
-export type SkyMapProps = { data: SkyMapData; onSelect?: (id: string) => void; topInset: number; bottomInset: number; scope: 'mine' | 'world' };
+export type SkyMapProps = { data: SkyMapData; onSelect?: (id: string) => void; onLocationChange?: (point: Coordinate) => void; topInset: number; bottomInset: number; scope: 'mine' | 'world' };
 
 const radians = Math.PI / 180;
 const coordinate = (city: City): Coordinate => ({ latitude: city.lat, longitude: city.lng });
@@ -38,11 +39,11 @@ export function routeCoordinates(origin: City, destination: City) {
 }
 
 export function skyMapData(flights: FlightSummary[], selected: string | null, now: number | null): SkyMapData {
-  const focus = flights.find(flight => flight.id === selected) ?? flights[0];
+  const focus = flights.find(flight => flight.id === selected);
   const routes = flights.map(flight => ({ id: flight.id, coordinates: routeCoordinates(flight.origin, flight.destination), selected: flight.id === focus?.id, origin: flight.origin, destination: flight.destination }));
   return {
-    focusKey: focus ? `${focus.id}:${focus.origin.id}:${focus.destination.id}` : 'atlantic',
-    focusCoordinates: routes.find(route => route.selected)?.coordinates ?? routeCoordinates(cityById('new-york'), cityById('london')),
+    focusKey: focus ? `${focus.id}:${focus.origin.id}:${focus.destination.id}` : routes.length ? `all:${routes.map(route => route.id).join(':')}` : 'atlantic',
+    focusCoordinates: routes.find(route => route.selected)?.coordinates ?? (routes.length ? routes.flatMap(route => route.coordinates) : routeCoordinates(cityById('new-york'), cityById('london'))),
     routes,
     markers: flights.map(flight => ({ id: flight.id, coordinate: flightCoordinate(flight.origin, flight.destination, now === null ? 0 : flightProgress(flight, now)), selected: flight.id === focus?.id, label: `${flight.courier}, pigeon from ${flight.origin.name} to ${flight.destination.name}. Tap for flight details.` })),
   };

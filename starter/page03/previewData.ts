@@ -1,13 +1,9 @@
 import { cityById, distanceKm, type FlightSummary } from '../../src/domain';
 import type { FlockBird } from './MapScreen';
 
-export const sampleFlock: FlockBird[] = [
-  { id: 'pip', name: 'Pip', status: 'Ready', color: '#2453FF', speed: '80 km/h', deliveries: '6 deliveries', defense: 'No defense' },
-  { id: 'miso', name: 'Miso', status: 'Ready', color: '#6F8BE5', speed: '72 km/h', deliveries: '12 deliveries', defense: 'No defense' },
-  { id: 'dot', name: 'Dot', status: 'Flying', color: '#C8D4E5', speed: '85 km/h', deliveries: '9 deliveries', defense: 'No defense' },
-  { id: 'nova', name: 'Nova', status: 'Flying', color: '#C8D4E5', speed: '90 km/h', deliveries: '18 deliveries', defense: 'No defense' },
-  { id: 'egg', name: 'Egg', status: '18 min', color: '#F1F3F8', egg: true, speed: 'A little surprise', deliveries: 'On its way', defense: '1 egg' },
-];
+export const sampleFlock: FlockBird[] = ['Mochi', 'Pip', 'Button', 'Noodle', 'Puddle'].map(name => ({
+  id: name.toLowerCase(), name, status: 'Ready', color: '#2453FF', speed: '60 km/h', deliveries: '0 deliveries', defense: 'No defense',
+}));
 
 export const sampleFriends = [
   { id: 'rowan', handle: 'rowan', city: cityById('london') },

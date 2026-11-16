@@ -128,7 +128,8 @@ function Arena({ game, width: w, height: h }: { game: Game; width: number; heigh
     <Path d={`M0 3h48m-20 9h36M${w - 62} ${h * 0.42}h62M0 ${h * 0.6}h32`} stroke="#C6D5E8" strokeWidth={1.5} fill="none" />
     <Path d={`M0 ${h - 22} ${w * 0.15} ${h - 52} ${w * 0.25} ${h - 30} ${w * 0.42} ${h - 56} ${w * 0.56} ${h - 29} ${w * 0.67} ${h - 49} ${w * 0.81} ${h - 18} ${w * 0.92} ${h - 38} ${w} ${h - 18}V${h}H0Z`} fill="#DCE7EF" />
     <G transform={`translate(${p.x * w} ${p.y * h})`}>
-      <Path d={`M${-direction * 35} -5h${-direction * 20}m${direction * 3} 10h${direction * 15}M${direction * 32} -15h${direction * 12}m${-direction * 4} -4 ${direction * 4} 4-${direction * 4} 4`} fill="none" stroke="#8597B3" strokeWidth={1.5} />
+      {/* Keep signed coordinates separate: a literal minus before a negative value crashes the native SVG parser. */}
+      <Path d={`M${-direction * 35} -5h${-direction * 20}m${direction * 3} 10h${direction * 15}M${direction * 32} -15h${direction * 12}m${-direction * 4} -4 ${direction * 4} 4 ${-direction * 4} 4`} fill="none" stroke="#8597B3" strokeWidth={1.5} />
       <Circle r={26} fill={palette.blue} stroke="white" strokeWidth={3} />
     </G>
     {trail.length > 0 && <Path d={path(trail)} fill="none" stroke={palette.blue} strokeOpacity={game.phase === 'aiming' ? 0.8 : 0.5} strokeWidth={1.5} strokeDasharray="3 8" />}

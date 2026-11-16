@@ -25,7 +25,7 @@ function Points({ value, plus = false, onPress }: { value: number | string; plus
 }
 
 export function BirdPicker({ birds, selected, onSelect, state, wearing, label = 'Who should wear it?' }: { birds: ShopBird[]; selected: string; onSelect: (id: string) => void; state: ShopState; wearing?: string; label?: string }) {
-  return <View style={{ gap: 12 }}><Copy>{label}</Copy><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingVertical: 3 }}>
+  return <View style={{ gap: 12 }}><Copy>{label}</Copy><ScrollView horizontal nestedScrollEnabled directionalLockEnabled style={a.horizontalScroll} contentContainerStyle={{ gap: 10, paddingVertical: 3 }}>
     {birds.filter(bird => !bird.egg).map(bird => <Pressable key={bird.id} accessibilityRole="radio" accessibilityLabel={`Choose ${bird.name}${wearing === bird.id ? ', currently wearing' : ''}`} accessibilityState={{ checked: selected === bird.id }} onPress={() => onSelect(bird.id)} style={{ alignItems: 'center', width: 58, gap: 5 }}>
       <View style={[styles.birdThumb, selected === bird.id && { borderColor: palette.blue, borderWidth: 2 }]}><Pigeon name={bird.name} accessory={wornBy(state, bird.id)} size={54} /></View>
       <Text style={[a.small, { color: palette.ink, fontWeight: '600' }]}>{bird.name}</Text>
@@ -156,13 +156,13 @@ export function CoopShop({ state: input, birds: allBirds, onBack, onAction, onPr
     {!connected && <Text accessibilityRole="alert" style={styles.status}>Reconnect to make changes to your flock.</Text>}
     {error ? <Text accessibilityRole="alert" style={[styles.status, { color: '#AE3046' }]}>{error}</Text> : null}
     {message ? <Text accessibilityLiveRegion="polite" style={styles.status}>{message}</Text> : null}
-    <ScrollView key={`${route.screen}${route.screen === 'accessory' ? route.item : ''}`} showsVerticalScrollIndicator={false} contentContainerStyle={[styles.content, { paddingBottom: footer ? 26 : insets.bottom + 20 }]}>{content}</ScrollView>
+    <ScrollView style={a.scroll} nestedScrollEnabled keyboardShouldPersistTaps="handled" key={`${route.screen}${route.screen === 'accessory' ? route.item : ''}`} contentContainerStyle={[styles.content, { paddingBottom: footer ? 26 : insets.bottom + 20 }]}>{content}</ScrollView>
     {footer && <View style={[styles.footer, { paddingBottom: insets.bottom }]}>{footer}</View>}
   </PageFrame>;
 }
 
 const styles = StyleSheet.create({
-  header: { height: 72, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  header: { flexShrink: 0, height: 72, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', gap: 6 },
   headerTitle: { fontFamily: font.heading, color: '#080B0F', fontSize: 20, flex: 1, textAlign: 'center', marginLeft: -2 },
   content: { paddingHorizontal: 24, paddingTop: 22, gap: 20 },
   heroTitle: { fontFamily: font.heading, fontSize: 34, lineHeight: 39, letterSpacing: -1.4, color: '#05070A' },
@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
   shadow: { marginTop: -17, width: '65%', height: 13, borderRadius: '50%', backgroundColor: '#DCE6EF' },
   ownedBadge: { fontFamily: font.system, fontSize: 12, lineHeight: 18, fontWeight: '600', color: palette.blue, backgroundColor: palette.pale, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 18 },
   birdThumb: { width: 58, height: 58, borderRadius: 17, borderWidth: 1, borderColor: palette.line, alignItems: 'center', justifyContent: 'center' },
-  footer: { paddingHorizontal: 24, paddingTop: 12, gap: 12, backgroundColor: 'white' },
+  footer: { flexShrink: 0, paddingHorizontal: 24, paddingTop: 12, gap: 12, backgroundColor: 'white' },
   footerCaption: { fontSize: 11, lineHeight: 16, color: palette.muted, textAlign: 'center' },
   balance: { backgroundColor: palette.water, borderRadius: 24, padding: 22, gap: 14 },
   balanceLabel: { fontFamily: font.system, fontWeight: '600', fontSize: 10, letterSpacing: 1.5, color: palette.muted },
