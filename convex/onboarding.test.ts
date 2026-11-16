@@ -13,6 +13,30 @@ async function setup() {
 }
 
 describe('phone onboarding', () => {
+  it('ensures legacy and paired-demo flocks without replacing inventory or identity', async () => {
+    const t = convexTest(schema, modules);
+    await expect(t.mutation(api.onboarding.ensureFlock, {})).rejects.toThrow('Sign in');
+    for (const demo of [false, true]) {
+      const userId = await t.run(ctx => ctx.db.insert('users', demo ? { isAnonymous: true } : { email: 'legacy@example.test' }));
+      const session = t.withIdentity({ subject: `${userId}|session` });
+      await expect(session.mutation(api.onboarding.ensureFlock, {})).rejects.toThrow('choose a handle');
+      if (demo) await session.mutation(api.starterPair.create, { handle: 'demo_owner', cityId: 'london' });
+      else await session.mutation(api.profiles.save, { handle: 'legacy_owner', cityId: 'london' });
+      const before = await t.run(ctx => ctx.db.query('profiles').withIndex('by_userId', q => q.eq('userId', userId)).unique());
+      const pairBefore = await t.run(ctx => ctx.db.query('starterPairs').collect());
+      const birdId = await t.run(ctx => ctx.db.insert('pigeons', { ownerId: before!._id, name: 'My Mochi', slot: 0 }));
+      const extraId = await t.run(ctx => ctx.db.insert('pigeons', { ownerId: before!._id, name: 'Extra', slot: 9 }));
+      const [first, retry] = await Promise.all([1, 2].map(() => session.mutation(api.onboarding.ensureFlock, {})));
+      expect(first).toEqual(retry);
+      expect(first.pigeons).toHaveLength(6);
+      expect(first.pigeons[0]).toEqual({ id: birdId, name: 'My Mochi' });
+      expect(first.pigeons[5]).toEqual({ id: extraId, name: 'Extra' });
+      expect(await session.query(api.onboarding.flock, {})).toEqual(first);
+      expect((await session.query(api.onboarding.status, {})).status).toBe('complete');
+      expect(await t.run(ctx => ctx.db.query('profiles').withIndex('by_userId', q => q.eq('userId', userId)).unique())).toEqual(before);
+      expect(await t.run(ctx => ctx.db.query('starterPairs').collect())).toEqual(pairBefore);
+    }
+  });
   it('does not let the legacy save endpoint skip the verified-phone flock grant', async () => {
     const { t, session } = await setup();
     await session.mutation(api.profiles.save, { handle: 'phone_user', cityId: 'london' });
