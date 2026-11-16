@@ -11,8 +11,7 @@ import { matchingFriends, visibleFlights } from './presentation';
 import { Button, Envelope, Field, Link, Loading, Notice, PostalCard, ScreenHeader, colors, s } from './ui';
 import { Pigeon } from './Pigeon';
 import { a, PageFrame, usePageInsets } from './page03/atoms';
-import { HomeSheet, MapScreen } from './page03/MapScreen';
-import { skyMapData } from './page03/mapData';
+import { MapScreen } from './page03/MapScreen';
 
 type Page = { screen: 'postbox' } | { screen: 'compose'; reply?: boolean } | { screen: 'detail'; id: string; sent?: boolean };
 type DraftController = ReturnType<typeof useDraft>;
@@ -36,7 +35,6 @@ export function Mailbox({ profile, deployment, connected, initialCompose = false
   const insets = usePageInsets();
   const world = useQuery(api.flights.list, scope === 'world' ? { scope: 'world', demo: profile.demo } : 'skip');
   const mapFlights = visibleFlights((scope === 'mine' ? flights : world)?.flights ?? [], scope);
-  const selectedFlight = mapFlights.find((flight) => flight.id === selected) ?? mapFlights[0];
 
   function go(next: Page) {
     setPage(next);
@@ -57,11 +55,25 @@ export function Mailbox({ profile, deployment, connected, initialCompose = false
   }
 
   const mine = flights?.flights.filter((flight) => flight.role === tab);
-  const outgoing = flights?.flights.filter((flight) => flight.role === 'sender' && flight.state === 'in_flight').length ?? 0;
-  const incoming = flights?.flights.filter((flight) => flight.role === 'recipient' && flight.state === 'in_flight').length ?? 0;
-
-  if (page.screen === 'postbox' && !inbox) return <MapScreen map={skyMapData(mapFlights, selectedFlight?.id ?? null, clock.serverNow)} scope={scope} onScope={(value) => { setScope(value); setSelected(null); setFlock(false); }} onMenu={onMenu} onInbox={() => setInbox(true)} onSelect={(id) => { setSelected(id); if (scope === 'mine') go({ screen: 'detail', id }); }}>
-    {flock ? <View style={[a.sheet, { paddingBottom: insets.bottom, gap: 16 }]}><Text style={a.heading}>Your flock</Text><View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>{account?.pigeons.map(bird => <View key={bird.id} style={{ alignItems: 'center' }}><Pigeon name={bird.name} size={56} /><Text style={a.small}>{bird.name}</Text></View>)}</View>{!account?.pigeons.length && <Text style={a.small}>No starter flock is attached to this legacy account.</Text>}<Button label={account?.pigeons.length ? "Send with Mochi" : "Send a pigeon"} onPress={() => { setFlock(false); go({ screen: 'compose' }); }} /><Link label="Back to sky" onPress={() => setFlock(false)} /></View> : scope === 'world' ? <View style={[a.sheet, { paddingBottom: insets.bottom + 12, gap: 12 }]}><WorldSelection id={selectedFlight?.id ?? null} connected={connected} onCatch={onCatch} /></View> : <HomeSheet title={flights === undefined ? 'Finding your flights…' : outgoing + incoming ? `${outgoing + incoming} ${outgoing + incoming === 1 ? 'flight' : 'flights'} in your sky` : 'Your sky is quiet'} subtitle={`${outgoing} sent · ${incoming} on its way to you`} ready="Your flock" onExpand={() => setFlock(true)} action={draft.locked ? 'Resolve saved send' : draft.draft?.body ? 'Continue your letter' : 'Send a pigeon'} onSend={() => { setReplyTarget(null); go({ screen: 'compose' }); }} disabled={connections === undefined} notice={!connected || clock.syncError ? <Text style={a.small}>Reconnecting. Status and sending wait for the server.</Text> : undefined} />}
+  if (page.screen === 'postbox' && !inbox) return <MapScreen
+    flights={mapFlights}
+    selected={selected}
+    serverNow={clock.serverNow}
+    scope={scope}
+    onScope={value => { setScope(value); setSelected(null); setFlock(false); }}
+    onMenu={onMenu}
+    onInbox={() => setInbox(true)}
+    onFlock={() => setFlock(true)}
+    onSelect={id => { setSelected(id); if (id) setFlock(false); }}
+    onOpenLetter={id => go({ screen: 'detail', id })}
+    loading={(scope === 'mine' ? flights : world) === undefined}
+    connected={connected}
+    clockError={clock.syncError}
+    action={draft.locked ? 'Resolve saved send' : draft.draft?.body ? 'Continue your letter' : 'Send a pigeon'}
+    onSend={() => { setReplyTarget(null); go({ screen: 'compose' }); }}
+    sendDisabled={connections === undefined}
+  >
+    {flock ? <View style={[a.sheet, { position: 'relative', paddingBottom: insets.bottom, gap: 16 }]}><Text style={a.heading}>Your flock</Text><View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>{account?.pigeons.map(bird => <View key={bird.id} style={{ alignItems: 'center' }}><Pigeon name={bird.name} size={56} /><Text style={a.small}>{bird.name}</Text></View>)}</View>{!account?.pigeons.length && <Text style={a.small}>No starter flock is attached to this legacy account.</Text>}<Button label={account?.pigeons.length ? "Send with Mochi" : "Send a pigeon"} onPress={() => { setFlock(false); go({ screen: 'compose' }); }} /><Link label="Back to sky" onPress={() => setFlock(false)} /></View> : null}
   </MapScreen>;
 
   return <PageFrame scroll style={{ paddingTop: insets.top, paddingBottom: insets.bottom, paddingHorizontal: 24, gap: 20 }}>
@@ -81,17 +93,6 @@ export function Mailbox({ profile, deployment, connected, initialCompose = false
       <LetterDetail id={page.id} serverNow={clock.serverNow} justSent={Boolean(page.sent)} onReply={reply} onReturn={onReturn} onHome={() => go({ screen: 'postbox' })} />
     </>}
   </PageFrame>;
-}
-
-function WorldSelection({ id, connected, onCatch }: { id: string | null; connected: boolean; onCatch?: (flightId: string) => void }) {
-  const result = useQuery(api.flights.detail, id ? { id } : 'skip');
-  if (!id) return <><Text style={s.subtitle}>A quiet patch of sky.</Text><Text style={s.small}>No Open Skies flights are available here right now. We’ll show real flights as they appear.</Text></>;
-  if (result === undefined) return <Loading label="Checking this flight’s availability…" />;
-  const flight = result.flight;
-  if (!flight || flight.visibility !== 'open' || flight.state !== 'in_flight') return <Notice>This flight is no longer available. Choose another pigeon.</Notice>;
-  return <><Text accessibilityRole="header" style={s.subtitle}>A pigeon is passing.</Text><Text style={s.body}>{flight.origin.name} → {flight.destination.name}</Text><Text style={s.small}>{flight.demo ? 'Demo speed · ' : ''}Arrival {exactTime(flight.arrivesAt)}</Text>
-    <Button label={onCatch ? 'Try to intercept →' : 'Interception · coming soon'} disabled={!connected || !flight.canCatch || !onCatch} onPress={() => { if (connected && flight.canCatch) onCatch?.(flight.id); }} />
-    <Text style={s.small}>{!connected ? 'Reconnect to check whether you can intercept.' : !flight.canCatch ? 'The server says this flight isn’t eligible for you to catch right now.' : !onCatch ? 'The game is not connected to this build yet.' : 'A catch can reveal this Open Skies letter and stop its delivery.'}</Text></>;
 }
 
 function Invitation({ token, expiresAt, serverNow }: { token: string | null; expiresAt: number | null; serverNow: number | null }) {
