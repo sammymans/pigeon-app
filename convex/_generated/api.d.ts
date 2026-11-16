@@ -15,6 +15,7 @@ import type * as commerceSchema from "../commerceSchema.js";
 import type * as demo from "../demo.js";
 import type * as flightModel from "../flightModel.js";
 import type * as flights from "../flights.js";
+import type * as flock from "../flock.js";
 import type * as http from "../http.js";
 import type * as model from "../model.js";
 import type * as onboarding from "../onboarding.js";
@@ -46,6 +47,7 @@ declare const fullApi: ApiFromModules<{
   demo: typeof demo;
   flightModel: typeof flightModel;
   flights: typeof flights;
+  flock: typeof flock;
   http: typeof http;
   model: typeof model;
   onboarding: typeof onboarding;

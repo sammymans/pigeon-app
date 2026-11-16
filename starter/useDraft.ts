@@ -55,7 +55,7 @@ export function useDraft(deployment: string, profileId: string, demo: boolean) {
     return write;
   }, [key]);
 
-  function edit(changes: Partial<Pick<Draft, 'body' | 'recipientId'>>) {
+  function edit(changes: Partial<Pick<Draft, 'body' | 'recipientId' | 'pigeonId' | 'anonymous'>>) {
     if (!current.current || current.current.pending || sending.current || acknowledged.current) return;
     setError('');
     void persist(editDraft(current.current, changes)).catch(() => {});
