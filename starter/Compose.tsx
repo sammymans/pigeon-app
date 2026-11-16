@@ -7,8 +7,8 @@ import type { useDraft } from './useDraft';
 import { Button, Field, Loading, Notice, s } from './ui';
 import { a, font, Icon, IconButton, PageFrame, PageHeader, palette, PrimaryButton, usePageInsets } from './page03/atoms';
 
-export function Compose({ profile, friends, friendsLoading, pigeon, controller, connected, replying, replyTarget, onBack, onChoosePigeon, onKeep, onReplace, onSend, onSetCity }: {
-  profile: Profile; friends: Profile[]; friendsLoading: boolean; pigeon?: Pigeon; controller: ReturnType<typeof useDraft>; connected: boolean;
+export function Compose({ profile, friends, friendsLoading, pigeon, controller, connected, replying, replyTarget, onBack, onChoosePigeon, onKeep, onReplace, onSend, onSetCity, notice }: {
+  notice?: string; profile: Profile; friends: Profile[]; friendsLoading: boolean; pigeon?: Pigeon; controller: ReturnType<typeof useDraft>; connected: boolean;
   replying: boolean; replyTarget: string | null; onBack: () => void; onChoosePigeon: () => void; onKeep: () => void; onReplace: () => void; onSend: () => void;
   onSetCity: (cityId: CityId) => Promise<unknown>;
 }) {
@@ -29,6 +29,7 @@ export function Compose({ profile, friends, friendsLoading, pigeon, controller, 
   return <PageFrame><KeyboardAvoidingView style={{ flex: 1, paddingTop: insets.top }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <PageHeader title={choosing ? 'Who’s it for?' : 'Send a pigeon'} back={choosing} disabled={busy} onClose={() => choosing ? setChoosing(false) : onBack()} />
     <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[c.content, { paddingBottom: insets.bottom + 12 }]}>
+      {notice && <Notice error>{notice}</Notice>}
       {!profile.cityId && !locked ? <>
         <Text style={a.heading}>Where will your pigeon fly from?</Text>
         <Text style={a.body}>Choose your departure city to calculate this letter’s route and travel time. We won’t request your location or choose a city for you.</Text>

@@ -50,7 +50,7 @@ async function update() { await act(async () => { renderer.update(app()); }); }
 async function enter() { await act(async () => renderer.root.findByType(Mailbox).props.onCatch!('opaque-flight')); }
 async function exit() { await act(async () => node('CatchGame').props.onExit({ flightId: 'opaque-flight', outcome: 'abandoned' })); }
 async function compose() {
-  await act(async () => node('HomeSheet').props.onSend());
+  await act(async () => node('MapScreen').props.onSend());
   const flock = renderer.root.findAllByType('FlockSheet' as never)[0];
   if (flock) await act(async () => flock.props.onSend());
 }

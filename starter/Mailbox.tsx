@@ -1,5 +1,5 @@
-import { useMutation, useQuery } from 'convex/react';
-import { useEffect, useRef, useState } from 'react';
+import { useConvex, useMutation, useQuery } from 'convex/react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { api } from '../convex/_generated/api';
 import { cityById, durationSeconds, formatDuration, OPEN_SKIES_DISCLOSURE, type FlightSummary, type Profile } from '../src/domain';
@@ -7,15 +7,20 @@ import { useServerClock } from './useServerClock';
 import { acceptedFriends, exactTime, flightStatus, readableBody } from './letterModel';
 import { useDraft } from './useDraft';
 import { Compose } from './Compose';
+import { randomUUID } from 'expo-crypto';
+import { Shop } from './shop/Shop';
+import { createConvexShopGateway } from './shop/convexGateway';
+import type { ShopEntry, ShopExit } from '../src/shop';
 import { visibleFlights } from './presentation';
 import { Button, Envelope, Loading, Notice, PostalCard, ScreenHeader, s } from './ui';
 import { a, PageFrame, usePageInsets } from './page03/atoms';
-import { FlockSheet, HomeSheet, MapScreen, SentSheet } from './page03/MapScreen';
-import { skyMapData } from './page03/mapData';
+import { FlockSheet, MapScreen, SentSheet } from './page03/MapScreen';
 
 type Page = { screen: 'postbox' } | { screen: 'compose'; reply?: boolean } | { screen: 'detail' | 'sent'; id: string };
 
 export function Mailbox({ profile, deployment, connected, initialCompose = false, openFlightId, onOpenFlightHandled, onCatch, onReturn, onNavigate, onMenu }: { profile: Profile; deployment: string; connected: boolean; initialCompose?: boolean; openFlightId?: string; onOpenFlightHandled?: () => void; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void; onNavigate: () => void; onMenu?: () => void }) {
+  const client = useConvex();
+  const shopGateway = useMemo(() => createConvexShopGateway(client, profile.id), [client, profile.id]);
   const connections = useQuery(api.social.list, {});
   const flights = useQuery(api.flights.list, { scope: 'mine', demo: profile.demo });
   const pair = useQuery(api.starterPair.status, profile.demo ? {} : 'skip');
@@ -36,11 +41,16 @@ export function Mailbox({ profile, deployment, connected, initialCompose = false
   const [flock, setFlock] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
   const [flockError, setFlockError] = useState('');
+  const [shop, setShop] = useState<{ key: string; entry: ShopEntry } | null>(null);
+  const [shopError, setShopError] = useState('');
+  const activeShop = useRef<string | null>(null);
+  const shopState = useRef({ draft, pigeons, connected });
+  shopState.current = { draft, pigeons, connected };
+  useEffect(() => () => { activeShop.current = null; }, []);
   const insets = usePageInsets();
   const world = useQuery(api.flights.list, scope === 'world' ? { scope: 'world', demo: profile.demo } : 'skip');
   const sentResult = useQuery(api.flights.detail, page.screen === 'sent' ? { id: page.id } : 'skip');
   const mapFlights = visibleFlights((scope === 'mine' ? flights : world)?.flights ?? [], scope);
-  const selectedFlight = mapFlights.find(flight => flight.id === selected) ?? mapFlights[0];
   const selectedBird = pigeons?.find(bird => bird.id === (picked ?? draft.draft?.pigeonId)) ?? pigeons?.find(bird => bird.ready) ?? pigeons?.[0];
   const draftBird = pigeons?.find(bird => bird.id === draft.draft?.pigeonId);
 
@@ -74,6 +84,38 @@ export function Mailbox({ profile, deployment, connected, initialCompose = false
     }
   }, [initialCompose, openFlightId, page.screen, draft.draft, draft.locked, pigeons, draft.edit]);
 
+  function openShop(from: 'home' | 'shop' | 'compose' | 'sky') {
+    if (draft.busy) return;
+    const key = randomUUID();
+    const selectedBirdId = from === 'compose' ? draft.draft?.pigeonId : selectedBird?.id;
+    const entry: ShopEntry = from === 'compose' ? { from, draftKey: key, selectedBirdId } : from === 'sky' ? { from } : { from, selectedBirdId };
+    activeShop.current = key;
+    setShopError('');
+    setShop({ key, entry });
+  }
+
+  function closeShop(key: string, exit: ShopExit) {
+    if (activeShop.current !== key || !shop || shop.key !== key) return;
+    activeShop.current = null;
+    setShop(null);
+    const current = shopState.current;
+    if (exit.to === 'compose') {
+      if (shop.entry.from === 'compose' && exit.draftKey !== key) return;
+      if (exit.confirmed) {
+        const bird = current.pigeons?.find(bird => bird.id === exit.selectedBirdId && bird.ready);
+        if (!bird || !current.connected || !current.draft.draft || current.draft.locked || current.draft.busy) {
+          setShopError('Your pigeon choice could not be confirmed. Your saved letter is unchanged.');
+          return;
+        }
+        if (current.draft.draft.pigeonId !== bird.id) current.draft.edit({ pigeonId: bird.id });
+        setPicked(bird.id);
+      }
+      go({ screen: 'compose', reply: replying });
+    } else if (exit.to === 'sky') {
+      setInbox(false); setFlock(false); setScope('world'); go({ screen: 'postbox' });
+    } else home();
+  }
+
   function go(next: Page) {
     setPage(next);
     onNavigate();
@@ -92,6 +134,13 @@ export function Mailbox({ profile, deployment, connected, initialCompose = false
     setScope('mine');
     setFlock(true);
     go({ screen: 'postbox' });
+  }
+
+  function beginSend() {
+    setReplyTarget(null);
+    setReplying(false);
+    if (draft.locked) go({ screen: 'compose' });
+    else chooseBird();
   }
 
   async function send() {
@@ -119,20 +168,36 @@ export function Mailbox({ profile, deployment, connected, initialCompose = false
 
   const mine = flights?.flights.filter(flight => flight.role === tab);
   const outgoing = flights?.flights.filter(flight => flight.role === 'sender' && flight.state === 'in_flight').length ?? 0;
-  const incoming = flights?.flights.filter(flight => flight.role === 'recipient' && flight.state === 'in_flight').length ?? 0;
 
-  if (page.screen === 'compose') return <Compose profile={profile} friends={friends} friendsLoading={connections === undefined} pigeon={draftBird} controller={draft} connected={connected} replying={Boolean(page.reply)} replyTarget={replyTarget} onBack={home} onChoosePigeon={chooseBird} onKeep={() => setReplyTarget(null)} onReplace={() => { if (replyTarget) { draft.startReply(replyTarget); if (draftBird) draft.edit({ pigeonId: draftBird.id }); } setReplyTarget(null); }} onSend={() => void send()} onSetCity={cityId => setCity({ cityId })} />;
+  if (shop) return <Shop key={shop.key} entry={shop.entry} gateway={shopGateway} onExit={exit => closeShop(shop.key, exit)} />;
+
+  if (page.screen === 'compose') return <Compose notice={shopError} profile={profile} friends={friends} friendsLoading={connections === undefined} pigeon={draftBird} controller={draft} connected={connected} replying={Boolean(page.reply)} replyTarget={replyTarget} onBack={home} onChoosePigeon={() => openShop('compose')} onKeep={() => setReplyTarget(null)} onReplace={() => { if (replyTarget) { draft.startReply(replyTarget); if (draftBird) draft.edit({ pigeonId: draftBird.id }); } setReplyTarget(null); }} onSend={() => void send()} onSetCity={cityId => setCity({ cityId })} />;
 
   if (page.screen === 'sent') {
     const flight = sentResult?.flight;
     const sentFlights = flight ? [flight, ...(flights?.flights ?? []).filter(item => item.id !== flight.id)] : flights?.flights ?? [];
-    return <MapScreen map={skyMapData(sentFlights, page.id, clock.serverNow)} onScope={value => { home(); setScope(value); }} onMenu={onMenu} onInbox={() => { home(); setInbox(true); }}>
-      {flight ? <SentSheet pigeon={flight.courier} state={flight.state} to={`To ${flight.recipientHandle ?? 'your friend'} · ${flight.destination.name}`} estimate={flight.state === 'in_flight' ? clock.serverNow === null ? 'Syncing ETA…' : clock.serverNow >= flight.arrivesAt ? 'Confirming arrival…' : `~${formatDuration((flight.arrivesAt - clock.serverNow) / 1000)}` : flight.state === 'delivered' ? 'Delivered' : 'Intercepted'} explanation={flight.state === 'in_flight' ? `${flight.demo ? 'Demo speed. ' : ''}Their message stays closed until delivery. ${flight.courier} stays in your flock and becomes ready when this flight ends.` : flight.state === 'delivered' ? 'The server confirmed delivery. Your pigeon is ready for another letter. Replies take a new flight.' : 'This Open Skies letter was caught and did not reach its recipient. Your pigeon is ready again.'} onHome={home} /> : <View style={[a.sheet, { paddingBottom: insets.bottom, gap: 16 }]}>{sentResult === undefined ? <Loading label="Loading your confirmed flight…" /> : <Notice>This flight is no longer available to this account.</Notice>}<Button label="Back to my flights" onPress={home} /></View>}
+    return <MapScreen flights={sentFlights} selected={page.id} serverNow={clock.serverNow} scope="mine" onSelect={setSelected} onScope={value => { home(); setScope(value); }} onMenu={onMenu} onCoop={() => openShop('home')} onInbox={() => { home(); setInbox(true); }} onOpenLetter={id => go({ screen: 'detail', id })} onSend={beginSend} connected={connected} clockError={clock.syncError}>
+      {flight ? <SentSheet embedded pigeon={flight.courier} state={flight.state} to={`To ${flight.recipientHandle ?? 'your friend'} · ${flight.destination.name}`} estimate={flight.state === 'in_flight' ? clock.serverNow === null ? 'Syncing ETA…' : clock.serverNow >= flight.arrivesAt ? 'Confirming arrival…' : `~${formatDuration((flight.arrivesAt - clock.serverNow) / 1000)}` : flight.state === 'delivered' ? 'Delivered' : 'Intercepted'} explanation={flight.state === 'in_flight' ? `${flight.demo ? 'Demo speed. ' : ''}Their message stays closed until delivery. ${flight.courier} stays in your flock and becomes ready when this flight ends.` : flight.state === 'delivered' ? 'The server confirmed delivery. Your pigeon is ready for another letter. Replies take a new flight.' : 'This Open Skies letter was caught and did not reach its recipient. Your pigeon is ready again.'} onHome={home} /> : <View style={[a.sheet, { position: 'relative', paddingBottom: insets.bottom, gap: 16 }]}>{sentResult === undefined ? <Loading label="Loading your confirmed flight…" /> : <Notice>This flight is no longer available to this account.</Notice>}<Button label="Back to my flights" onPress={home} /></View>}
     </MapScreen>;
   }
 
-  if (page.screen === 'postbox' && !inbox) return <MapScreen map={skyMapData(mapFlights, selectedFlight?.id ?? null, clock.serverNow)} scope={scope} onScope={value => { setScope(value); setSelected(null); setFlock(false); }} onMenu={onMenu} onInbox={() => setInbox(true)} onSelect={id => { setSelected(id); if (scope === 'mine') go({ screen: 'detail', id }); }}>
-    {flock ? <FlockSheet birds={(pigeons ?? []).map((bird, index) => ({ id: bird.id, name: bird.name, status: bird.ready ? 'Ready' : 'Flying', color: bird.ready ? ['#2453FF', '#7290DF', '#526AC3'][index % 3] : '#CBD6E4', speed: profile.demo ? 'Demo speed' : '60 km/h', deliveries: `${bird.deliveries} deliveries`, defense: 'No defense' }))} selected={selectedBird?.id ?? null} summary={pigeons !== undefined ? `${pigeons.filter(bird => bird.ready).length} ready · ${pigeons.length} slots` : 'Loading your flock…'} unavailable={pigeons === undefined ? 'Loading your account’s pigeons…' : 'No owned pigeons. Complete account setup to prepare your flock.'} onSelect={setPicked} onClose={() => setFlock(false)} onSend={selectedBird?.ready && connected && draft.draft && !draft.locked && outgoing < 3 ? () => { draft.edit({ pigeonId: selectedBird.id }); setFlock(false); go({ screen: 'compose', reply: replying }); } : undefined} notice={<>{!draft.draft && draft.error && <><Notice error>{draft.error}</Notice><Button label="Retry loading draft" secondary onPress={draft.retryStorage} /></>}{flockError ? <><Notice error>{flockError}</Notice><Button label="Retry loading flock" secondary disabled={!connected} onPress={() => { setFlockError(''); void ensureFlock({}).catch(() => setFlockError('Your flock could not be loaded. Reconnect and retry.')); }} /></> : draft.locked ? <Button label="Resolve saved send" onPress={() => go({ screen: 'compose' })} /> : outgoing >= 3 ? <Text style={a.small}>Three pigeons are already flying. Wait for one to arrive before sending another.</Text> : !connected ? <Text style={a.small}>Reconnect to confirm which pigeons are ready.</Text> : selectedBird && !selectedBird.ready ? <Text style={a.small}>This pigeon is flying. Choose a ready pigeon or wait for the server to confirm arrival.</Text> : undefined}</>} /> : scope === 'world' ? <View style={[a.sheet, { paddingBottom: insets.bottom + 12, gap: 12 }]}><WorldSelection id={selectedFlight?.id ?? null} connected={connected} onCatch={onCatch} /></View> : <HomeSheet title={flights === undefined ? 'Finding your flights…' : outgoing + incoming ? `${outgoing + incoming} ${outgoing + incoming === 1 ? 'flight' : 'flights'} in your sky` : 'Your sky is quiet'} subtitle={`${outgoing} sent · ${incoming} on its way to you`} ready="Your flock" onExpand={chooseBird} action={draft.locked ? 'Resolve saved send' : draft.draft?.body ? 'Continue your letter' : 'Send a pigeon'} onSend={() => { setReplyTarget(null); setReplying(false); if (draft.locked) go({ screen: 'compose' }); else chooseBird(); }} disabled={connections === undefined} notice={<>{!draft.draft && draft.error && <><Notice error>{draft.error}</Notice><Button label="Retry loading draft" secondary onPress={draft.retryStorage} /></>}{!connected || clock.syncError ? <Text style={a.small}>Reconnecting. Status and sending wait for the server.</Text> : null}{selected && selectedFlight && <Pressable accessibilityRole="button" accessibilityLabel="View selected flight" onPress={() => go({ screen: 'detail', id: selectedFlight.id })} style={{ minHeight: 44, justifyContent: 'center' }}><Text style={a.body}>{selectedFlight.courier} · {flightStatus(selectedFlight, clock.serverNow)} →</Text></Pressable>}</>} />}
+  if (page.screen === 'postbox' && !inbox) return <MapScreen
+    flights={mapFlights} selected={selected} serverNow={clock.serverNow} scope={scope}
+    onScope={value => { setScope(value); setSelected(null); setFlock(false); }}
+    onSelect={id => { setSelected(id); if (id) setFlock(false); }}
+    onOpenLetter={id => go({ screen: 'detail', id })}
+    onMenu={onMenu} onCoop={() => openShop('home')} onInbox={() => setInbox(true)} onFlock={chooseBird}
+    loading={(scope === 'mine' ? flights : world) === undefined}
+    connected={connected} clockError={clock.syncError}
+    action={draft.locked ? 'Resolve saved send' : draft.draft?.body ? 'Continue your letter' : 'Send a pigeon'}
+    onSend={beginSend} sendDisabled={connections === undefined}
+    notice={<>
+      {shopError && <Notice error>{shopError}</Notice>}
+      {!draft.draft && draft.error && <><Notice error>{draft.error}</Notice><Button label="Retry loading draft" secondary onPress={draft.retryStorage} /></>}
+      {scope === 'world' && selected && <WorldSelection id={selected} connected={connected} onCatch={onCatch} onShop={() => openShop('sky')} />}
+    </>}
+  >
+    {flock ? <FlockSheet embedded onShop={() => openShop('shop')} birds={(pigeons ?? []).map((bird, index) => ({ id: bird.id, name: bird.name, status: bird.ready ? 'Ready' : 'Flying', color: bird.ready ? ['#2453FF', '#7290DF', '#526AC3'][index % 3] : '#CBD6E4', speed: profile.demo ? 'Demo speed' : '60 km/h', deliveries: `${bird.deliveries} deliveries`, defense: 'No defense' }))} selected={selectedBird?.id ?? null} summary={pigeons !== undefined ? `${pigeons.filter(bird => bird.ready).length} ready · ${pigeons.length} slots` : 'Loading your flock…'} unavailable={pigeons === undefined ? 'Loading your account’s pigeons…' : 'No owned pigeons. Complete account setup to prepare your flock.'} onSelect={setPicked} onClose={() => setFlock(false)} onSend={selectedBird?.ready && connected && draft.draft && !draft.locked && outgoing < 3 ? () => { draft.edit({ pigeonId: selectedBird.id }); setFlock(false); go({ screen: 'compose', reply: replying }); } : undefined} notice={<>{!draft.draft && draft.error && <><Notice error>{draft.error}</Notice><Button label="Retry loading draft" secondary onPress={draft.retryStorage} /></>}{flockError ? <><Notice error>{flockError}</Notice><Button label="Retry loading flock" secondary disabled={!connected} onPress={() => { setFlockError(''); void ensureFlock({}).catch(() => setFlockError('Your flock could not be loaded. Reconnect and retry.')); }} /></> : draft.locked ? <Button label="Resolve saved send" onPress={() => go({ screen: 'compose' })} /> : outgoing >= 3 ? <Text style={a.small}>Three pigeons are already flying. Wait for one to arrive before sending another.</Text> : !connected ? <Text style={a.small}>Reconnect to confirm which pigeons are ready.</Text> : selectedBird && !selectedBird.ready ? <Text style={a.small}>This pigeon is flying. Choose a ready pigeon or wait for the server to confirm arrival.</Text> : undefined}</>} /> : null}
   </MapScreen>;
 
   return <PageFrame scroll style={{ paddingTop: insets.top, paddingBottom: insets.bottom, paddingHorizontal: 24, gap: 20 }}>
@@ -151,15 +216,16 @@ export function Mailbox({ profile, deployment, connected, initialCompose = false
     </>}
   </PageFrame>;
 }
-function WorldSelection({ id, connected, onCatch }: { id: string | null; connected: boolean; onCatch?: (flightId: string) => void }) {
+function WorldSelection({ id, connected, onCatch, onShop }: { id: string | null; connected: boolean; onCatch?: (flightId: string) => void; onShop: () => void }) {
   const result = useQuery(api.flights.detail, id ? { id } : 'skip');
   if (!id) return <><Text style={s.subtitle}>A quiet patch of sky.</Text><Text style={s.small}>No Open Skies flights are available here right now. We’ll show real flights as they appear.</Text></>;
   if (result === undefined) return <Loading label="Checking this flight’s availability…" />;
   const flight = result.flight;
   if (!flight || flight.visibility !== 'open' || flight.state !== 'in_flight') return <Notice>This flight is no longer available. Choose another pigeon.</Notice>;
   return <><Text accessibilityRole="header" style={s.subtitle}>A pigeon is passing.</Text><Text style={s.body}>{flight.origin.name} → {flight.destination.name}</Text><Text style={s.small}>{flight.demo ? 'Demo speed · ' : ''}Arrival {exactTime(flight.arrivesAt)}</Text>
-    <Button label={onCatch ? 'Try to intercept →' : 'Interception · coming soon'} disabled={!connected || !flight.canCatch || !onCatch} onPress={() => { if (connected && flight.canCatch) onCatch?.(flight.id); }} />
-    <Text style={s.small}>{!connected ? 'Reconnect to check whether you can intercept.' : !flight.canCatch ? 'The server says this flight isn’t eligible for you to catch right now.' : !onCatch ? 'The game is not connected to this build yet.' : 'A catch can reveal this Open Skies letter and stop its delivery.'}</Text></>;
+    <Button label={onCatch ? 'Try to intercept →' : 'Interception · coming soon'} disabled={!connected || flight.canSlingshot !== true || !onCatch} onPress={() => { if (connected && flight.canSlingshot === true) onCatch?.(flight.id); }} />
+    <Button label="Stone shop" secondary onPress={onShop} />
+    <Text style={s.small}>{!connected ? 'Reconnect to check whether you can intercept.' : flight.canSlingshot !== true ? 'The server says this flight isn’t eligible for you to catch right now.' : !onCatch ? 'The game is not connected to this build yet.' : 'A catch can reveal this Open Skies letter and stop its delivery.'}</Text></>;
 }
 
 function Invitation({ token, expiresAt, serverNow }: { token: string | null; expiresAt: number | null; serverNow: number | null }) {

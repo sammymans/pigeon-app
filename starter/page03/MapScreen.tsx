@@ -16,6 +16,7 @@ type Props = {
   onScope: (scope: 'mine' | 'world') => void;
   onSelect: (id: string | null) => void;
   onInbox?: () => void;
+  onCoop?: () => void;
   onMenu?: () => void;
   onFlock?: () => void;
   children?: ReactNode;
@@ -31,7 +32,7 @@ type Props = {
   notice?: ReactNode;
 };
 
-export function MapScreen({ flights, selected, serverNow, scope, onScope, onSelect, onInbox, onMenu, onFlock, children, onOpenLetter, onSend, action = 'Send a pigeon', sendDisabled, loading = false, connected = true, clockError = false, title, subtitle, notice }: Props) {
+export function MapScreen({ flights, selected, serverNow, scope, onScope, onSelect, onInbox, onCoop, onMenu, onFlock, children, onOpenLetter, onSend, action = 'Send a pigeon', sendDisabled, loading = false, connected = true, clockError = false, title, subtitle, notice }: Props) {
   const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState(Platform.OS === 'web');
   const [height, setHeight] = useState(844);
@@ -67,7 +68,7 @@ export function MapScreen({ flights, selected, serverNow, scope, onScope, onSele
         <View style={styles.brandRow}><Text accessibilityLabel="Pigeon" style={styles.brand}>pigeon<Text style={{ color: palette.blue }}>.</Text></Text><IconButton name="more" label="Account and settings" onPress={onMenu} /></View>
         <View style={styles.toolbar}>
           <View accessibilityRole="tablist" style={styles.tabs}>{([['mine', 'My flights'], ['world', 'World']] as const).map(([value, label]) => <Pressable key={value} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{ selected: scope === value }} onPress={() => { onScope(value); onSelect(null); }} style={[styles.tab, scope === value && styles.activeTab]}><Text style={[a.body, styles.tabText, scope === value && styles.activeTabText]}>{label}</Text></Pressable>)}</View>
-          <IconButton name="mail" label="Open your postbox" round onPress={onInbox} />
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>{onCoop && <Pressable accessibilityRole="button" accessibilityLabel="Open your coop" onPress={onCoop} style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}><PaperPigeon size={28} /></Pressable>}<IconButton name="mail" label="Open your postbox" round onPress={onInbox} /></View>
         </View>
       </View>
       {Platform.OS !== 'web' && <View pointerEvents="box-none" style={[styles.mapTools, { bottom: sheetHeight + 8 }]}>
@@ -97,28 +98,28 @@ export function MapScreen({ flights, selected, serverNow, scope, onScope, onSele
 }
 
 export type FlockBird = { id: string; name: string; status: string; color: string; speed?: string; deliveries?: string; defense?: string };
-export function FlockSheet({ birds, selected, summary, onSelect, onClose, onSend, unavailable, notice }: { birds: FlockBird[]; selected: string | null; summary: string; onSelect: (id: string) => void; onClose: () => void; onSend?: () => void; unavailable?: string; notice?: ReactNode }) {
+export function FlockSheet({ birds, selected, summary, onSelect, onClose, onSend, unavailable, notice, onShop, embedded = false }: { birds: FlockBird[]; selected: string | null; summary: string; onSelect: (id: string) => void; onClose: () => void; onSend?: () => void; unavailable?: string; notice?: ReactNode; onShop?: () => void; embedded?: boolean }) {
   const { bottom } = usePageInsets();
   const bird = birds.find(item => item.id === selected);
-  return <View style={[a.sheet, { height: 514 + Math.max(0, bottom - 30), maxHeight: '80%', paddingBottom: bottom }]}>
+  return <View style={[a.sheet, { height: 514 + Math.max(0, bottom - 30), maxHeight: '80%', paddingBottom: bottom }, embedded && { position: 'relative', height: 'auto', maxHeight: undefined }]}>
     <Handle onPress={onClose} label="Collapse your flock" />
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 18, paddingBottom: 16 }}>
+    <ScrollView scrollEnabled={!embedded} showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 18, paddingBottom: 16 }}>
       <View style={[a.between, { alignItems: 'baseline' }]}><Text accessibilityRole="header" style={a.heading}>Your flock</Text><Copy style={{ fontSize: 13, lineHeight: 16 }}>{summary}</Copy></View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} accessibilityRole="radiogroup" contentContainerStyle={m.flockRow}>{birds.map(item => <Pressable key={item.id} accessibilityRole="radio" accessibilityLabel={`${item.name}, ${item.status}`} aria-checked={selected === item.id} accessibilityState={{ checked: selected === item.id }} onPress={() => onSelect(item.id)} style={m.bird}><View style={[m.birdRing, { borderColor: selected === item.id ? palette.blue : 'transparent', borderWidth: 2 }]}><View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: item.color }} /></View><Text style={[a.small, { fontWeight: '600', color: '#000' }]}>{item.name}</Text><Text style={[a.small, { fontSize: 10, lineHeight: 12 }]}>{item.status}</Text></Pressable>)}</ScrollView>
       <View style={m.birdDetails}><View style={a.between}><Copy style={{ color: '#000', fontSize: 16, lineHeight: 20, fontWeight: '600' }}>{bird?.name ?? 'Your pigeons'}</Copy><Copy style={{ fontSize: 12, lineHeight: 16, color: palette.blue }}>{bird?.status === 'Ready' ? 'Ready to fly' : bird?.status ?? 'Loading'}</Copy></View><View style={a.between}>{bird ? [bird.speed, bird.deliveries, bird.defense].map((value, i) => <Copy key={i} style={{ fontSize: 13, lineHeight: 16 }}>{value}</Copy>) : <Copy style={{ fontSize: 12, lineHeight: 16 }}>{unavailable ?? 'Loading your flock…'}</Copy>}</View></View>
       <View style={[a.between, { paddingHorizontal: 2, minHeight: 48 }]}><View style={{ gap: 5 }}><Copy style={{ color: '#000', fontWeight: '600' }}>Hatchery</Copy><Copy style={{ fontSize: 12, lineHeight: 16 }}>Not available in this build</Copy></View><Copy style={{ fontSize: 12 }}>Coming soon</Copy></View>
-      <View style={[a.between, { borderTopWidth: 1, borderColor: palette.line, paddingTop: 14, minHeight: 32, marginTop: -8 }]}><Copy>Pigeons &amp; defenses</Copy><Copy style={{ fontSize: 12 }}>Shop · coming soon</Copy></View>
+      <View style={[a.between, { borderTopWidth: 1, borderColor: palette.line, paddingTop: 14, minHeight: 32, marginTop: -8 }]}><Copy>Pigeons &amp; defenses</Copy><Pressable accessibilityRole="button" accessibilityLabel="Open shop" disabled={!onShop} onPress={onShop} style={{ minHeight: 44, justifyContent: 'center' }}><Copy style={{ fontSize: 12, color: palette.blue }}>{onShop ? 'Shop →' : 'Shop · coming soon'}</Copy></Pressable></View>
       {notice}
       <PrimaryButton label={bird ? `Send with ${bird.name}` : 'Choose a pigeon'} compact disabled={bird?.status !== 'Ready'} onPress={onSend} />
     </ScrollView>
   </View>;
 }
 
-export function SentSheet({ pigeon, state = 'in_flight', to, estimate, explanation, onHome }: { pigeon: string; state?: 'in_flight' | 'delivered' | 'intercepted'; to: string; estimate: string; explanation: string; onHome: () => void }) {
+export function SentSheet({ pigeon, state = 'in_flight', to, estimate, explanation, onHome, embedded = false }: { pigeon: string; state?: 'in_flight' | 'delivered' | 'intercepted'; to: string; estimate: string; explanation: string; onHome: () => void; embedded?: boolean }) {
   const { bottom } = usePageInsets();
-  return <View style={[a.sheet, { minHeight: 250, maxHeight: '70%', paddingBottom: bottom, gap: 12 }]}>
+  return <View style={[a.sheet, { minHeight: 250, maxHeight: '70%', paddingBottom: bottom, gap: 12 }, embedded && { position: 'relative', maxHeight: undefined }]}>
     <Handle />
-    <ScrollView contentContainerStyle={{ gap: 12 }}>
+    <ScrollView scrollEnabled={!embedded} contentContainerStyle={{ gap: 12 }}>
       <View style={[a.row, { gap: 9 }]}><Icon name="check" color={palette.blue} size={21} /><Text accessibilityRole="header" style={[a.heading, { flexShrink: 1 }]}>{state === 'in_flight' ? `${pigeon}’s on the way.` : state === 'delivered' ? `${pigeon} has arrived.` : `${pigeon} was intercepted.`}</Text></View>
       <View style={[a.between, { gap: 12 }]}><Copy style={{ flex: 1 }}>{to}</Copy><Copy style={{ color: '#000', fontWeight: '600', maxWidth: '42%' }}>{estimate}</Copy></View>
       <Copy style={{ fontSize: 13, lineHeight: 20, color: palette.muted }}>{explanation}</Copy>
@@ -145,7 +146,7 @@ const styles = StyleSheet.create({
   header: { backgroundColor: 'white', paddingHorizontal: 24, paddingBottom: 28 },
   brandRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 10 },
   brand: { fontFamily: font.brand, fontSize: 40, lineHeight: 48, letterSpacing: -2, color: palette.ink },
-  toolbar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, gap: 12 },
+  toolbar: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, gap: 12 },
   tabs: { flexDirection: 'row', padding: 4, borderRadius: 28, backgroundColor: '#EEF1F5' },
   tab: { minHeight: 44, paddingHorizontal: 17, borderRadius: 24, justifyContent: 'center' },
   activeTab: { backgroundColor: palette.ink },
