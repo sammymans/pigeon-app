@@ -22,4 +22,12 @@ const Phone = ConvexCredentials({
   },
 });
 
-export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({ providers: [Password, Anonymous, Phone] });
+const ExistingPassword = Password({
+  profile: params => {
+    if (params.flow !== 'signIn') throw new ConvexError('New accounts must verify a phone number.');
+    if (typeof params.email !== 'string') throw new ConvexError('Enter your existing account email.');
+    return { email: params.email };
+  },
+});
+
+export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({ providers: [ExistingPassword, Anonymous, Phone] });
