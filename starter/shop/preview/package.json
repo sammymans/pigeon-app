@@ -2,6 +2,6 @@
   "name": "pigeon-shop-test-preview",
   "private": true,
   "version": "1.0.0",
-  "main": "../PreviewEntry.tsx",
+  "main": "index.ts",
   "scripts": { "start": "expo start --web --port 8083" }
 }

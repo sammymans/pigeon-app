@@ -84,8 +84,8 @@ export type AttemptResult = {
 
 export type Order = {
   id: string;
-  sku: 'aviator';
-  status: 'pending' | 'paid' | 'failed' | 'refunded' | 'reconciliation';
+  sku: 'aviator' | 'points-100' | 'points-550' | 'points-1200';
+  status: 'pending' | 'paid' | 'failed' | 'canceled' | 'disputed' | 'refunded' | 'reconciliation';
   purchaseUrl?: string;
   createdAt: number;
 };

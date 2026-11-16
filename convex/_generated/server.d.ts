@@ -31,6 +31,8 @@ type Env = {
   readonly CONVEX_CLOUD_URL: string;
   readonly CONVEX_SITE_URL: string;
   readonly PIGEON_PUBLIC_ORIGIN: string | undefined;
+  readonly PIGEON_SHOP_CHANNEL: string | undefined;
+  readonly PIGEON_SHOP_SANDBOX_CATALOG: string | undefined;
   readonly WHOP_SANDBOX_ACCOUNT_ID: string | undefined;
   readonly WHOP_SANDBOX_API_KEY: string | undefined;
   readonly WHOP_SANDBOX_VARIANT_ID: string | undefined;

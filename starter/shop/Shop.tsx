@@ -33,14 +33,17 @@ export function Shop({ entry, gateway, onExit, previewPaymentControls }: Props) 
       if (version !== readVersion.current) return;
       setSnapshot(next);
       setSession(current => current ?? startSession(entry, next));
+      if (next.pendingOrder) setOrder(current => current ?? next.pendingOrder);
     } catch { setError('Your coop could not be refreshed. Nothing has been purchased. Try again.'); }
   }
 
   useEffect(() => {
     void refresh();
-    const unsubscribe = gateway.subscribe?.(() => { void refresh(); });
+    const unsubscribe = gateway.subscribe?.(() => { void refresh(); if (order) void gateway.order(order.id).then(next => { if (next) setOrder(next); }).catch(() => {}); });
     return () => { readVersion.current++; unsubscribe?.(); };
-  }, [gateway]);
+  }, [gateway, order?.id]);
+
+  useEffect(() => { if (order && order.sku !== 'extra-pigeon') setPackId(order.sku); }, [order?.id]);
 
   function go(page: ShopPage) {
     if (busy || pendingCommand) return;
@@ -157,6 +160,7 @@ export function Shop({ entry, gateway, onExit, previewPaymentControls }: Props) 
       failed: 'Payment was declined or failed. No points were added.',
       refunded: 'Payment reversed. Check your current balance; contact support if you need help.',
       reconciliation: 'This payment needs review. Do not pay again; contact support with your order reference.',
+      disputed: 'This payment is disputed. Spending is paused while it is reviewed; do not pay again.',
     };
     return <View style={s.payment} testID="payment-status"><Text style={s.subheading}>{order.status === 'paid' ? 'Points confirmed' : order.status === 'pending' ? 'Payment pending' : order.status === 'reconciliation' ? 'Payment needs review' : `Payment ${order.status}`}</Text><Text accessibilityLiveRegion="polite" style={s.body}>{statusCopy[order.status]}</Text><Text selectable style={s.small}>Order {order.id}</Text>
       {isPreview && previewPaymentControls?.(order)}

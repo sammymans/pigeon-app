@@ -10,9 +10,10 @@ export type ShopSnapshot = {
   points: number | null;
   inventory: readonly InventoryItem[];
   serverNow: number;
+  pendingOrder?: ShopOrder;
   capabilities: { accessories: boolean; boosters: boolean; stones: boolean; checkout: boolean; reason?: string };
 };
-export type PaymentStatus = 'pending' | 'paid' | 'canceled' | 'failed' | 'refunded' | 'reconciliation';
+export type PaymentStatus = 'pending' | 'paid' | 'canceled' | 'failed' | 'disputed' | 'refunded' | 'reconciliation';
 export type ShopOrder = { id: string; sku: PackId | 'extra-pigeon'; status: PaymentStatus; purchaseUrl?: string };
 export type ShopEntry =
   | { from: 'home'; selectedBirdId?: string }
