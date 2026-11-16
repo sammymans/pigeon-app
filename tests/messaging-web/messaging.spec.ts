@@ -44,7 +44,9 @@ test('renders and completes flock → postcard → persistent in-flight → My f
   await shot(page, '03-in-flight-fixture');
   await page.getByRole('button', { name: 'Back to my flights', exact: true }).click();
   await expect(page.getByRole('tab', { name: 'My flights' })).toHaveAttribute('aria-selected', 'true');
-  await expect(page.getByRole('button', { name: 'View selected flight' })).toContainText('Pip');
+  await page.getByRole('button', { name: 'Select Pip, New York to London' }).click();
+  await expect(page.getByRole('heading', { name: 'Pip is on the wing' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open letter details' })).toBeVisible();
   const calls = await page.evaluate(() => (window as any).messagingFixture.state.calls);
   expect(calls).toHaveLength(1);
   expect(calls[0]).toMatchObject({ pigeonId: 'fixture-bird-1', recipientId: 'fixture-friend', openAcknowledged: true });
@@ -82,6 +84,7 @@ test('blocks a pigeon that becomes unavailable and lets the draft move to a read
   await page.evaluate(() => (window as any).messagingFixture.unavailable('fixture-bird-0'));
   await expect(fly(page)).toBeDisabled();
   await page.getByRole('button', { name: 'Choose another pigeon' }).click();
+  await page.getByRole('radio', { name: 'Mochi, Fixture flight' }).click();
   await expect(page.getByRole('button', { name: 'Send with Mochi' })).toBeDisabled();
   await page.getByRole('radio', { name: 'Pip, Ready' }).click();
   await page.getByRole('button', { name: 'Send with Pip' }).click();
