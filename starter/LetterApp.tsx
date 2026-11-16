@@ -76,8 +76,12 @@ function GameHome({ profile, ...props }: Omit<Parameters<typeof Home>[0], 'consu
   const [encounterId, setEncounterId] = useState<string | null>(null);
   const [openFlightId, setOpenFlightId] = useState<string>();
   const transport = useCatchTransport();
-  if (encounterId) return <CatchGame flightId={encounterId} connected={props.connected} transport={transport} onExit={() => setEncounterId(null)} onOpenLetter={({ flightId }) => { setOpenFlightId(flightId); setEncounterId(null); }} />;
-  return <Mailbox key={profile.id} profile={profile} {...props} openFlightId={openFlightId} onOpenFlightHandled={() => setOpenFlightId(undefined)} onCatch={props.onCatch ?? (id => { setOpenFlightId(undefined); setEncounterId(id); })} onNavigate={() => setOpenFlightId(undefined)} />;
+  return <View style={{ flex: 1 }}>
+    <View testID="mailbox-host" style={{ flex: 1, display: encounterId ? 'none' : 'flex' }} pointerEvents={encounterId ? 'none' : 'auto'} accessibilityElementsHidden={Boolean(encounterId)} importantForAccessibility={encounterId ? 'no-hide-descendants' : 'auto'} aria-hidden={Boolean(encounterId)}>
+      <Mailbox key={profile.id} profile={profile} {...props} openFlightId={openFlightId} onOpenFlightHandled={() => setOpenFlightId(undefined)} onCatch={props.onCatch ?? (id => { setOpenFlightId(undefined); setEncounterId(id); })} onNavigate={() => setOpenFlightId(undefined)} />
+    </View>
+    {encounterId && <CatchGame flightId={encounterId} connected={props.connected} transport={transport} onExit={() => setEncounterId(null)} onOpenLetter={({ flightId }) => { setOpenFlightId(flightId); setEncounterId(null); }} />}
+  </View>;
 }
 
 class QueryBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {

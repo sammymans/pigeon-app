@@ -6,7 +6,7 @@ Paper source: https://app.paper.design/file/01M7GFFP9QE40C6END0X03AYCB/p-6-0 (`f
 
 `LetterApp` mounts `CatchGame` above `Mailbox`, keyed by profile and opaque flight ID. No public flight body is passed into the game. `useCatchTransport` calls the authenticated `slingshot` mutations; `prepare` revalidates public visibility, namespace, sender/recipient exclusions, blocks, arrival and prior/competing attempts. Map callers use `FlightDetail.canSlingshot`; `canCatch` retains the legacy timing-game contract.
 
-An authoritative catch passes the ID through `Mailbox.openFlightId` / `onOpenFlightHandled`. The existing authorized detail query controls body access. Consuming the intent prevents Back from reopening it; switching accounts discards the entire game navigation boundary.
+An authoritative catch passes the ID through `Mailbox.openFlightId` / `onOpenFlightHandled`. The existing authorized detail query controls body access; the actual Mailbox renders server-returned Open Skies text for its intercepted catcher. Consuming the intent prevents Back from reopening it. Mailbox and its draft controller stay mounted during play, hidden from layout, input and accessibility, so a delayed storage write cannot restore an older draft. Switching accounts discards the entire game navigation boundary.
 
 This version supports **non-trip flights only**. Trip-aware flights (including empty returns) are excluded until the complete custody protocol is available. No 30-minute lease or return reward is advertised or fabricated. No room provisioning, paid packs, courier subsystem, or pigeon/account model is introduced here.
 
