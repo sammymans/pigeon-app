@@ -16,6 +16,7 @@ function Preview() {
   const [page, setPage] = useState<'home' | 'compose' | 'shop'>(params.has('screen') ? 'shop' : 'home');
   const [entry, setEntry] = useState<ShopEntry>(() => params.get('screen') === 'scarf' ? { from: 'item', itemId: 'cloud-scarf', selectedBirdId: 'preview-button' } : params.get('screen') === 'owned' ? { from: 'item', itemId: 'sunday-cap', selectedBirdId: 'preview-button' } : params.get('screen') === 'stones' ? { from: 'sky' } : params.get('screen') === 'coop' ? { from: 'home' } : { from: 'shop' });
   const unavailable: ShopGateway = useMemo(() => ({
+    scopeKey: 'unavailable-test-preview',
     read: async () => ({ revision: 'unavailable', source: 'server', birds: [], points: null, inventory: [], serverNow: Date.now(), capabilities: { accessories: false, boosters: false, stones: false, checkout: false, reason: 'The canonical flock and approved sandbox catalog are not connected. No payment has been started.' } }),
     mutate: async () => { throw new Error('Unavailable'); }, checkout: async () => { throw new Error('Unavailable'); }, order: async () => null, openCheckout: async () => { throw new Error('Unavailable'); },
   }), []);

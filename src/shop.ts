@@ -11,10 +11,10 @@ export type ShopSnapshot = {
   inventory: readonly InventoryItem[];
   serverNow: number;
   pendingOrder?: ShopOrder;
-  capabilities: { accessories: boolean; boosters: boolean; stones: boolean; checkout: boolean; reason?: string };
+  capabilities: { accessories: boolean; boosters: boolean; stones: boolean; checkout: boolean; checkoutSkus?: readonly PackId[]; reason?: string };
 };
 export type PaymentStatus = 'pending' | 'paid' | 'canceled' | 'failed' | 'disputed' | 'refunded' | 'reconciliation';
-export type ShopOrder = { id: string; sku: PackId | 'extra-pigeon'; status: PaymentStatus; purchaseUrl?: string };
+export type ShopOrder = { id: string; sku: PackId | 'extra-pigeon'; status: PaymentStatus; purchaseUrl?: string; requestKey?: string };
 export type ShopEntry =
   | { from: 'home'; selectedBirdId?: string }
   | { from: 'shop'; ownedOnly?: boolean; selectedBirdId?: string }
@@ -30,6 +30,7 @@ export type ShopCommand =
   | { kind: 'activate-guard' }
   | { kind: 'buy-stones' };
 export type ShopGateway = {
+  scopeKey: string;
   read: () => Promise<ShopSnapshot>;
   subscribe?: (onChange: () => void) => () => void;
   mutate: (input: { command: ShopCommand; requestKey: string; revision: string }) => Promise<ShopSnapshot>;

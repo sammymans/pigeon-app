@@ -37,11 +37,14 @@ export const fulfill = internalAction({
     if (!event || event.state !== 'queued' || !event.payload.paymentId) return null;
     try {
       const config = requireSandboxConnection();
-      const payment = paymentSnapshot(await whopRequest(`/payments/${encodeURIComponent(event.payload.paymentId)}`, config.apiKey));
+      let payment = paymentSnapshot(await whopRequest(`/payments/${encodeURIComponent(event.payload.paymentId)}`, config.apiKey));
       let currentDisputeStatus: string | undefined;
-      if (event.payload.type.startsWith('dispute.') && payment.intentId) {
-        const order = await ctx.runQuery(internal.commerceData.orderForVerification, { intentId: payment.intentId });
-        if (order && order.sku !== 'aviator') {
+      let verificationVersion: number | undefined;
+      const order = payment.intentId ? await ctx.runQuery(internal.commerceData.orderForVerification, { intentId: payment.intentId }) : null;
+      if (order && order.sku !== 'aviator') {
+        verificationVersion = order.verificationVersion ?? 0;
+        payment = paymentSnapshot(await whopRequest(`/payments/${encodeURIComponent(event.payload.paymentId)}`, config.apiKey));
+        if (event.payload.type.startsWith('dispute.')) {
           const resourceId = event.payload.resourceId;
           if (!resourceId || !/^dspt_[A-Za-z0-9]+$/.test(resourceId)) throw new Error('Missing dispute identity.');
           const dispute = record(await whopRequest(`/disputes/${encodeURIComponent(resourceId)}`, config.apiKey));
@@ -49,7 +52,7 @@ export const fulfill = internalAction({
           currentDisputeStatus = dispute.status;
         }
       }
-      await ctx.runMutation(internal.commerceData.processPayment, { eventId, payment, sourceEnvironment: 'sandbox', ...(currentDisputeStatus ? { currentDisputeStatus } : {}) });
+      await ctx.runMutation(internal.commerceData.processPayment, { eventId, payment, sourceEnvironment: 'sandbox', ...(currentDisputeStatus ? { currentDisputeStatus } : {}), ...(verificationVersion !== undefined ? { verificationVersion } : {}) });
     } catch {
       await ctx.runMutation(internal.commerceData.retryEvent, { eventId });
     }

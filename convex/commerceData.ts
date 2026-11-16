@@ -12,6 +12,7 @@ import type { Order } from '../src/domain';
 export function orderDto(order: Doc<'commerceOrders'>): Order {
   return {
     id: order.intentId, sku: order.sku, status: order.status, createdAt: order.createdAt,
+    ...(order.sku !== 'aviator' ? { requestKey: order.requestKey } : {}),
     ...(order.status === 'pending' && order.purchaseUrl && !order.checkoutClosed && Date.now() - order.createdAt < 23 * 3600000 ? { purchaseUrl: order.purchaseUrl } : {}),
   };
 }
@@ -34,8 +35,7 @@ export const beginCheckout = internalMutation({
     if (disputed) throw new ConvexError('Resolve the disputed payment before paying again.');
     const pending = await ctx.db.query('commerceOrders').withIndex('by_profileId_and_status', (q) => q.eq('profileId', profile._id).eq('status', 'pending')).first();
     if (pending) {
-      if (pending.sku !== sku) throw new ConvexError('Resolve the pending checkout before choosing a different item.');
-      return pending;
+      throw new ConvexError('Resume the pending checkout with its original request key before starting another.');
     }
     const catalog = approvedShopCatalog();
     const pack = catalog?.packs.find(pack => pack.sku === sku);
@@ -51,6 +51,10 @@ export const beginCheckout = internalMutation({
       redirectUrl: `${config.origin}/checkout-return?order=${encodeURIComponent(intentId)}`,
       createdAt, updatedAt: createdAt,
     });
+    if (sku !== 'aviator') {
+      const expiryJobId = await ctx.scheduler.runAfter(23 * 3600000, internal.commerceData.expirePendingCheckout, { id });
+      await ctx.db.patch('commerceOrders', id, { expiryJobId });
+    }
     return (await ctx.db.get('commerceOrders', id))!;
   },
 });
@@ -65,6 +69,7 @@ export const attachCheckout = internalMutation({
     const bound = await ctx.db.query('commerceOrders').withIndex('by_checkoutId', (q) => q.eq('checkoutId', checkoutId)).unique();
     if (bound && bound._id !== id) throw new ConvexError('Checkout is already bound to another order.');
     await ctx.db.patch('commerceOrders', id, { checkoutId, purchaseUrl, updatedAt: Date.now() });
+    if (order.sku !== 'aviator' && order.status !== 'pending') await ctx.scheduler.runAfter(0, internal.whopNode.closeCheckout, { orderId: id });
     return orderDto({ ...order, checkoutId, purchaseUrl });
   },
 });
@@ -76,9 +81,19 @@ export const expireCheckout = internalMutation({
     const order = await ctx.db.get('commerceOrders', id);
     if (!order || order.profileId !== profile._id) throw new ConvexError('Order unavailable.');
     if (order.status !== 'pending') return orderDto(order);
-    await ctx.db.patch('commerceOrders', id, { status: 'reconciliation', updatedAt: Date.now() });
+    await ctx.db.patch('commerceOrders', id, { status: 'reconciliation', verificationVersion: (order.verificationVersion ?? 0) + 1, updatedAt: Date.now() });
     if (order.sku !== 'aviator' && order.checkoutId) await ctx.scheduler.runAfter(0, internal.whopNode.closeCheckout, { orderId: id });
     return orderDto({ ...order, status: 'reconciliation' });
+  },
+});
+
+export const expirePendingCheckout = internalMutation({
+  args: { id: v.id('commerceOrders') },
+  handler: async (ctx, { id }) => {
+    const order = await ctx.db.get('commerceOrders', id);
+    if (!order || order.sku === 'aviator' || order.status !== 'pending') return;
+    await ctx.db.patch('commerceOrders', id, { status: 'reconciliation', verificationVersion: (order.verificationVersion ?? 0) + 1, updatedAt: Date.now() });
+    if (order.checkoutId) await ctx.scheduler.runAfter(0, internal.whopNode.closeCheckout, { orderId: id });
   },
 });
 
@@ -91,7 +106,7 @@ export const replayVerification = internalMutation({
   args: { eventId: v.id('commerceEvents') },
   handler: async (ctx, { eventId }) => {
     const event = await ctx.db.get('commerceEvents', eventId);
-    if (!event || event.state !== 'reconciliation' || !['sandbox_payment_lookup_failed', 'checkout_not_attached'].includes(event.reason ?? '')) throw new Error('Only transient verification failures may be replayed.');
+    if (!event || event.state !== 'reconciliation' || !['sandbox_payment_lookup_failed', 'checkout_not_attached', 'verification_conflict'].includes(event.reason ?? '')) throw new Error('Only transient verification failures may be replayed.');
     await ctx.db.patch('commerceEvents', eventId, { state: 'queued', attempts: 0, reason: undefined, processedAt: undefined });
     await ctx.scheduler.runAfter(0, internal.whopNode.fulfill, { eventId });
   },
@@ -110,6 +125,16 @@ export const recordCheckoutClosure = internalMutation({
     const attempts = (order.closeAttempts ?? 0) + 1;
     await ctx.db.patch('commerceOrders', orderId, { checkoutClosed: closed, closeAttempts: attempts });
     if (!closed && attempts < 5) await ctx.scheduler.runAfter(1000 * 2 ** attempts, internal.whopNode.closeCheckout, { orderId });
+  },
+});
+
+export const retryCheckoutClosure = internalMutation({
+  args: { orderId: v.id('commerceOrders') },
+  handler: async (ctx, { orderId }) => {
+    const order = await ctx.db.get('commerceOrders', orderId);
+    if (!order || order.sku === 'aviator' || order.status === 'pending' || !order.checkoutId || order.checkoutClosed) throw new Error('No terminal points checkout needs cleanup.');
+    await ctx.db.patch('commerceOrders', orderId, { closeAttempts: 0 });
+    await ctx.scheduler.runAfter(0, internal.whopNode.closeCheckout, { orderId });
   },
 });
 
@@ -153,7 +178,7 @@ export const retryEvent = internalMutation({
       await ctx.db.patch('commerceEvents', eventId, { attempts, state: 'reconciliation', reason: 'sandbox_payment_lookup_failed', processedAt: Date.now() });
       const intentId = event.payload.payment?.intentId;
       const order = intentId ? await ctx.db.query('commerceOrders').withIndex('by_intentId', (q) => q.eq('intentId', intentId)).unique() : event.payload.paymentId ? await ctx.db.query('commerceOrders').withIndex('by_paymentId', q => q.eq('paymentId', event.payload.paymentId!)).unique() : null;
-      if (order && (order.status === 'pending' || order.sku !== 'aviator')) await ctx.db.patch('commerceOrders', order._id, { status: 'reconciliation', updatedAt: Date.now() });
+      if (order && (order.status === 'pending' || order.sku !== 'aviator')) await ctx.db.patch('commerceOrders', order._id, { status: 'reconciliation', verificationVersion: (order.verificationVersion ?? 0) + 1, updatedAt: Date.now() });
     } else {
       await ctx.db.patch('commerceEvents', eventId, { attempts });
       await ctx.scheduler.runAfter(1000 * 2 ** attempts, internal.whopNode.fulfill, { eventId });
@@ -163,20 +188,27 @@ export const retryEvent = internalMutation({
 });
 
 export const processPayment = internalMutation({
-  args: { eventId: v.id('commerceEvents'), payment: paymentValidator, sourceEnvironment: v.literal('sandbox'), currentDisputeStatus: v.optional(v.string()) },
+  args: { eventId: v.id('commerceEvents'), payment: paymentValidator, sourceEnvironment: v.literal('sandbox'), currentDisputeStatus: v.optional(v.string()), verificationVersion: v.optional(v.number()) },
   returns: v.null(),
-  handler: async (ctx, { eventId, payment, sourceEnvironment, currentDisputeStatus }) => {
+  handler: async (ctx, { eventId, payment, sourceEnvironment, currentDisputeStatus, verificationVersion }) => {
     const event = await ctx.db.get('commerceEvents', eventId);
     if (!event || event.state !== 'queued') return null;
     const now = Date.now();
     const payload = event.payload;
     const intentId = payload.payment?.intentId ?? payment.intentId;
     const order = intentId ? await ctx.db.query('commerceOrders').withIndex('by_intentId', (q) => q.eq('intentId', intentId)).unique() : null;
+    if (order && order.sku !== 'aviator' && verificationVersion !== (order.verificationVersion ?? 0)) {
+      const attempts = event.attempts + 1;
+      await ctx.db.patch('commerceEvents', eventId, { attempts, orderId: order._id, ...(attempts >= 5 ? { state: 'reconciliation' as const, reason: 'verification_conflict', processedAt: now } : {}) });
+      if (attempts < 5) await ctx.scheduler.runAfter(1000 * 2 ** attempts, internal.whopNode.fulfill, { eventId });
+      else await ctx.db.patch('commerceOrders', order._id, { status: 'reconciliation', verificationVersion: (order.verificationVersion ?? 0) + 1, updatedAt: now });
+      return null;
+    }
     if (order && !order.checkoutId && order.status === 'pending' && payment.intentId === order.intentId && payment.accountId === order.accountId) {
       const attempts = event.attempts + 1;
       await ctx.db.patch('commerceEvents', eventId, { attempts, orderId: order._id, ...(attempts >= 5 ? { state: 'reconciliation' as const, reason: 'checkout_not_attached', processedAt: now } : {}) });
       if (attempts < 5) await ctx.scheduler.runAfter(1000 * 2 ** attempts, internal.whopNode.fulfill, { eventId });
-      else await ctx.db.patch('commerceOrders', order._id, { status: 'reconciliation', updatedAt: now });
+      else await ctx.db.patch('commerceOrders', order._id, { status: 'reconciliation', verificationVersion: (order.verificationVersion ?? 0) + 1, updatedAt: now });
       return null;
     }
     const reason = !order ? 'unknown_order'
@@ -187,7 +219,7 @@ export const processPayment = internalMutation({
         ?? (payload.type === 'payment.succeeded' && payload.payment ? paymentMismatch(payload.payment, order) : null);
     if (reason || !order || !payment.id) {
       await ctx.db.patch('commerceEvents', eventId, { state: 'reconciliation', reason: reason ?? 'missing_payment', processedAt: now, ...(order ? { orderId: order._id } : {}) });
-      if (order?.status === 'pending') await ctx.db.patch('commerceOrders', order._id, { status: 'reconciliation', updatedAt: now });
+      if (order?.status === 'pending') await ctx.db.patch('commerceOrders', order._id, { status: 'reconciliation', verificationVersion: (order.verificationVersion ?? 0) + 1, updatedAt: now });
       return null;
     }
     const previousPayment = await ctx.db.query('commercePayments').withIndex('by_paymentId', (q) => q.eq('paymentId', payment.id!)).unique();
@@ -199,7 +231,7 @@ export const processPayment = internalMutation({
       const profile = await ctx.db.get('profiles', order.profileId);
       if (!profile || profile.userId !== order.userId || !Number.isSafeInteger(order.pointsCredits) || !order.pointsCredits || order.pointsCredits < 0 || !order.productId) {
         await ctx.db.patch('commerceEvents', eventId, { state: 'reconciliation', reason: 'invalid_points_order', orderId: order._id, processedAt: now });
-        await ctx.db.patch('commerceOrders', order._id, { status: 'reconciliation', updatedAt: now });
+        await ctx.db.patch('commerceOrders', order._id, { status: 'reconciliation', verificationVersion: (order.verificationVersion ?? 0) + 1, updatedAt: now });
         return null;
       }
       await settlePoints(ctx, order, payment, payload, previousPayment, currentDisputeStatus);
@@ -248,22 +280,26 @@ async function settlePoints(ctx: MutationCtx, order: Doc<'commerceOrders'>, paym
   const now = Date.now();
   const credit = await ctx.db.query('commerceLedger').withIndex('by_profileId_and_key', q => q.eq('profileId', order.profileId).eq('key', `payment:${paymentId}`)).unique();
   const reversal = await ctx.db.query('commerceLedger').withIndex('by_profileId_and_key', q => q.eq('profileId', order.profileId).eq('key', `refund:${paymentId}`)).unique();
-  const refunded = (payment.refundedCents ?? 0) > 0 || ['refunded', 'auto_refunded', 'partially_refunded', 'dispute_lost'].includes(payment.substatus ?? '') || (payload.type.startsWith('refund.') && payload.resourceStatus === 'succeeded') || disputeStatus === 'lost';
+  const refundReported = (payment.refundedCents ?? 0) > 0 || ['refunded', 'auto_refunded', 'partially_refunded'].includes(payment.substatus ?? '') || (payload.type.startsWith('refund.') && payload.resourceStatus === 'succeeded');
+  const refunded = (payment.totalCents !== null && payment.refundedCents === payment.totalCents) || (disputeStatus ? ['lost', 'prevented'].includes(disputeStatus) : payment.substatus === 'dispute_lost');
+  const refundHeld = !refunded && Boolean(previous?.refundHeld || refundReported);
   const disputeEvent = payload.type.startsWith('dispute.');
-  const clearedDispute = disputeStatus !== undefined && ['won', 'prevented', 'warning_closed'].includes(disputeStatus);
-  const suspended = !refunded && (disputeEvent ? !clearedDispute : (payment.substatus ?? '').startsWith('dispute_') && !['dispute_won', 'dispute_warning_closed'].includes(payment.substatus!));
+  const clearedDispute = disputeStatus !== undefined && ['won', 'warning_closed'].includes(disputeStatus);
+  const suspended = !refunded && !clearedDispute && (previous?.disputeHeld || (disputeEvent ? true : (payment.substatus ?? '').startsWith('dispute_') && !['dispute_won', 'dispute_warning_closed'].includes(payment.substatus!)));
   let status = order.status;
   let delta = 0;
   let key: string | undefined;
   if (refunded || previous?.revoked) {
     status = 'refunded';
     if (credit && !reversal) { delta = -order.pointsCredits!; key = `refund:${paymentId}`; }
-  } else if (suspended) status = 'disputed';
-  else if (credit) status = 'paid';
-  else if (payload.type === 'payment.succeeded' && payment.status === 'paid' && ['succeeded', 'dispute_won', 'dispute_warning_closed'].includes(payment.substatus ?? '') && payload.payment?.status === 'paid' && payload.payment.substatus === 'succeeded') {
+  } else if (refundHeld) status = 'reconciliation';
+  else if (suspended) status = 'disputed';
+  else if (credit && payment.status === 'paid' && ['succeeded', 'dispute_won', 'dispute_warning_closed'].includes(payment.substatus ?? '')) status = 'paid';
+  else if (payment.status === 'paid' && ['succeeded', 'dispute_won', 'dispute_warning_closed'].includes(payment.substatus ?? '') && ((payload.type === 'payment.succeeded' && payload.payment?.status === 'paid' && payload.payment.substatus === 'succeeded') || clearedDispute)) {
     status = 'paid'; delta = order.pointsCredits!; key = `payment:${paymentId}`;
-  } else if (payload.type === 'payment.canceled' && payment.status !== 'paid') status = 'canceled';
-  else if (payload.type === 'payment.failed' && payment.status !== 'paid') status = 'failed';
+  } else if (!credit && payload.type === 'payment.canceled' && payment.status === 'void' && payment.substatus === 'canceled') status = 'canceled';
+  else if (!credit && payload.type === 'payment.failed' && ['void', 'uncollectible'].includes(payment.status ?? '') && ['failed', 'blocked', 'canceled', 'price_too_low', 'uncollectible'].includes(payment.substatus ?? '')) status = 'failed';
+  else if (!credit && ['draft', 'open', 'authorized', 'pending', 'unresolved'].includes(payment.status ?? '')) status = order.status === 'reconciliation' ? 'reconciliation' : 'pending';
   else status = 'reconciliation';
   if (key) {
     const wallet = await ctx.db.query('commerceWallets').withIndex('by_profileId', q => q.eq('profileId', order.profileId)).unique();
@@ -273,8 +309,12 @@ async function settlePoints(ctx: MutationCtx, order: Doc<'commerceOrders'>, paym
     else await ctx.db.insert('commerceWallets', { profileId: order.profileId, balance, revision: 1 });
     await ctx.db.insert('commerceLedger', { profileId: order.profileId, key, delta, kind: delta > 0 ? 'purchase' : 'refund', orderId: order._id, paymentId, createdAt: now });
   }
-  if (previous) await ctx.db.patch('commercePayments', previous._id, { revoked: previous.revoked || refunded, updatedAt: now });
-  else await ctx.db.insert('commercePayments', { paymentId, orderId: order._id, revoked: refunded, updatedAt: now });
-  await ctx.db.patch('commerceOrders', order._id, { status, paymentId, updatedAt: now });
-  if (order.checkoutId && !order.checkoutClosed && (order.closeAttempts ?? 0) < 5) await ctx.scheduler.runAfter(0, internal.whopNode.closeCheckout, { orderId: order._id });
+  const bindPayment = payment.status === 'paid' || refunded || refundHeld || suspended || previous;
+  if (previous) await ctx.db.patch('commercePayments', previous._id, { revoked: previous.revoked || refunded, refundHeld, disputeHeld: Boolean(suspended), updatedAt: now });
+  else if (bindPayment) await ctx.db.insert('commercePayments', { paymentId, orderId: order._id, revoked: refunded, refundHeld, disputeHeld: Boolean(suspended), updatedAt: now });
+  await ctx.db.patch('commerceOrders', order._id, { status, ...(bindPayment ? { paymentId } : {}), verificationVersion: (order.verificationVersion ?? 0) + 1, updatedAt: now });
+  if (status !== 'pending') {
+    if (order.expiryJobId) await ctx.scheduler.cancel(order.expiryJobId);
+    if (order.checkoutId && !order.checkoutClosed && (order.closeAttempts ?? 0) < 5) await ctx.scheduler.runAfter(0, internal.whopNode.closeCheckout, { orderId: order._id });
+  }
 }

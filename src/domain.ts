@@ -87,6 +87,7 @@ export type Order = {
   sku: 'aviator' | 'points-100' | 'points-550' | 'points-1200';
   status: 'pending' | 'paid' | 'failed' | 'canceled' | 'disputed' | 'refunded' | 'reconciliation';
   purchaseUrl?: string;
+  requestKey?: string;
   createdAt: number;
 };
 

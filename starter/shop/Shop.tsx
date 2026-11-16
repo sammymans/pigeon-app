@@ -11,7 +11,11 @@ type Props = { entry: ShopEntry; gateway: ShopGateway; onExit: (exit: ShopExit) 
 type PendingCommand = { command: ShopCommand; requestKey: string; revision: string };
 const money = (value: number | null) => value === null ? '—' : value.toLocaleString('en-US');
 
-export function Shop({ entry, gateway, onExit, previewPaymentControls }: Props) {
+export function Shop(props: Props) {
+  return <ShopVisit key={`${props.gateway.scopeKey}:${JSON.stringify(props.entry)}`} {...props} />;
+}
+
+function ShopVisit({ entry, gateway, onExit, previewPaymentControls }: Props) {
   const insets = useSafeAreaInsets();
   const [snapshot, setSnapshot] = useState<ShopSnapshot>();
   const [session, setSession] = useState<ShopSession>();
@@ -23,27 +27,53 @@ export function Shop({ entry, gateway, onExit, previewPaymentControls }: Props) 
   const [order, setOrder] = useState<ShopOrder>();
   const request = useRef(false);
   const readVersion = useRef(0);
+  const lifetime = useRef(0);
+  const paymentReadVersion = useRef(0);
+  const activeOrderId = useRef<string | undefined>(undefined);
+  activeOrderId.current = order?.id;
   const checkoutRequest = useRef<{ sku: PackId | 'extra-pigeon'; requestKey: string } | undefined>(undefined);
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
 
   async function refresh() {
     const version = ++readVersion.current;
+    const generation = lifetime.current;
     try {
       const next = await gateway.read();
-      if (version !== readVersion.current) return;
+      if (version !== readVersion.current || generation !== lifetime.current) return;
       setSnapshot(next);
       setSession(current => current ?? startSession(entry, next));
       if (next.pendingOrder) setOrder(current => current ?? next.pendingOrder);
-    } catch { setError('Your coop could not be refreshed. Nothing has been purchased. Try again.'); }
+    } catch { if (generation === lifetime.current && version === readVersion.current) setError('Your coop could not be refreshed. A previous action may have completed. Check its status or retry the same action.'); }
+  }
+
+  async function readPayment(id: string) {
+    const version = ++paymentReadVersion.current;
+    const generation = lifetime.current;
+    const next = await gateway.order(id);
+    if (generation !== lifetime.current || version !== paymentReadVersion.current || activeOrderId.current !== id) return;
+    if (!next) throw new Error('Order unavailable');
+    setOrder(next);
+    if (next.status === 'paid' || next.status === 'refunded' || next.status === 'disputed') await refresh();
   }
 
   useEffect(() => {
+    lifetime.current++;
+    return () => { lifetime.current++; readVersion.current++; paymentReadVersion.current++; };
+  }, [gateway]);
+
+  useEffect(() => {
     void refresh();
-    const unsubscribe = gateway.subscribe?.(() => { void refresh(); if (order) void gateway.order(order.id).then(next => { if (next) setOrder(next); }).catch(() => {}); });
+    const unsubscribe = gateway.subscribe?.(() => { void refresh(); const id = activeOrderId.current; if (id) void readPayment(id).catch(() => {}); });
     return () => { readVersion.current++; unsubscribe?.(); };
   }, [gateway, order?.id]);
 
-  useEffect(() => { if (order && order.sku !== 'extra-pigeon') setPackId(order.sku); }, [order?.id]);
+  useEffect(() => {
+    if (order && order.sku !== 'extra-pigeon') {
+      setPackId(order.sku);
+      if (order.requestKey) checkoutRequest.current = { sku: order.sku, requestKey: order.requestKey };
+      else if (checkoutRequest.current?.sku !== order.sku) checkoutRequest.current = undefined;
+    } else if (snapshot?.capabilities.checkoutSkus?.length && !snapshot.capabilities.checkoutSkus.includes(packId)) setPackId(snapshot.capabilities.checkoutSkus[0]);
+  }, [order?.id, snapshot?.capabilities.checkoutSkus?.join(',')]);
 
   function go(page: ShopPage) {
     if (busy || pendingCommand) return;
@@ -73,31 +103,39 @@ export function Shop({ entry, gateway, onExit, previewPaymentControls }: Props) 
     if (!snapshot || request.current) return;
     request.current = true; setBusy(true); setError(''); setNotice('');
     const input = pendingCommand ?? { command, requestKey: Crypto.randomUUID(), revision: snapshot.revision };
+    const generation = lifetime.current;
     setPendingCommand(input);
     try {
       const next = await gateway.mutate(input);
+      if (generation !== lifetime.current) return;
       readVersion.current++;
       setSnapshot(next); setPendingCommand(undefined); setNotice(success);
     } catch (cause) {
+      if (generation !== lifetime.current) return;
       if (cause instanceof ShopFailure) {
         setPendingCommand(undefined);
         if (cause.code === 'insufficient') setSession(current => current && openPoints(current));
         if (cause.code === 'stale') await refresh();
+        if (generation !== lifetime.current) return;
         setError(cause.message);
       } else setError('Confirmation did not arrive. Retry this same action to check it without purchasing twice.');
-    } finally { request.current = false; setBusy(false); }
+    } finally { if (generation === lifetime.current) { request.current = false; setBusy(false); } }
   }
 
   async function checkout(sku: PackId | 'extra-pigeon') {
     if (!snapshot || request.current || !snapshot.capabilities.checkout || (snapshot.source === 'server' && Platform.OS !== 'web')) return;
     request.current = true; setBusy(true); setError(''); setNotice('');
+    const generation = lifetime.current;
     try {
-      if (order && ['pending', 'reconciliation'].includes(order.status)) {
+      if (order && ['pending', 'reconciliation', 'disputed'].includes(order.status)) {
         if (order.sku !== sku) throw new ShopFailure('rejected', 'Resolve the existing checkout before choosing a different item.');
       }
       checkoutRequest.current ??= { sku, requestKey: Crypto.randomUUID() };
       if (checkoutRequest.current.sku !== sku) throw new ShopFailure('rejected', 'Check the earlier checkout before changing the selection.');
       const next = await gateway.checkout(checkoutRequest.current);
+      if (generation !== lifetime.current) return;
+      paymentReadVersion.current++;
+      activeOrderId.current = next.id;
       setOrder(next);
       if (next.status === 'pending' && next.purchaseUrl) {
         if (!safeCheckoutUrl(next.purchaseUrl)) throw new ShopFailure('unavailable', 'The server did not return an approved sandbox checkout URL.');
@@ -105,23 +143,24 @@ export function Shop({ entry, gateway, onExit, previewPaymentControls }: Props) 
       } else if (next.status === 'paid') await refresh();
       else if (next.status === 'pending' && snapshot.source === 'server') setNotice('Checkout is being prepared. Check its status before trying again.');
     } catch (cause) {
+      if (generation !== lifetime.current) return;
       setError(cause instanceof ShopFailure ? cause.message : 'Checkout could not be confirmed. Retry the same checkout; no points have been granted here.');
-    } finally { request.current = false; setBusy(false); }
+      if (cause instanceof ShopFailure && !order) checkoutRequest.current = undefined;
+      await refresh();
+    } finally { if (generation === lifetime.current) { request.current = false; setBusy(false); } }
   }
 
   async function checkPayment() {
     if (!order || request.current) return;
     request.current = true; setBusy(true); setError('');
+    const generation = lifetime.current;
     try {
-      const next = await gateway.order(order.id);
-      if (!next) throw new Error('Order unavailable');
-      setOrder(next);
-      if (next.status === 'paid') await refresh();
-    } catch { setError('Payment status could not be checked. Your balance has not been changed by this screen.'); }
-    finally { request.current = false; setBusy(false); }
+      await readPayment(order.id);
+    } catch { if (generation === lifetime.current) setError('Payment status could not be checked. Your balance has not been changed by this screen.'); }
+    finally { if (generation === lifetime.current) { request.current = false; setBusy(false); } }
   }
 
-  if (!snapshot || !session) return <View style={s.loading}><ActivityIndicator color={BLUE} /><Text style={s.body}>{error || 'Finding your flock…'}</Text>{error && <Action label="Retry loading" onPress={() => void refresh()} />}</View>;
+  if (!snapshot || !session) return <View style={s.loading}><ActivityIndicator color={BLUE} /><Text style={s.body}>{error || 'Finding your flock…'}</Text>{error ? <Action label="Retry loading" onPress={() => void refresh()} /> : null}</View>;
   const selectedBird = snapshot.birds.find(b => b.id === session.selectedBirdId);
   const isPreview = snapshot.source === 'test-preview';
   const locked = busy || Boolean(pendingCommand);
@@ -136,7 +175,7 @@ export function Shop({ entry, gateway, onExit, previewPaymentControls }: Props) 
   const ready = snapshot.birds.filter(b => b.status === 'ready').length;
   const guard = guardRemaining(snapshot);
   const pack = proposedPacks.find(p => p.id === packId)!;
-  const canCheckout = snapshot.capabilities.checkout && (isPreview || Platform.OS === 'web');
+  const canCheckout = snapshot.capabilities.checkout && Boolean(snapshot.capabilities.checkoutSkus?.includes(packId)) && (isPreview || Platform.OS === 'web');
   const setupReason = snapshot.capabilities.reason ?? 'Proposed purchases are not enabled. No payment will be started.';
 
   function picker(onlyReady: boolean) {
@@ -164,19 +203,19 @@ export function Shop({ entry, gateway, onExit, previewPaymentControls }: Props) 
     };
     return <View style={s.payment} testID="payment-status"><Text style={s.subheading}>{order.status === 'paid' ? 'Points confirmed' : order.status === 'pending' ? 'Payment pending' : order.status === 'reconciliation' ? 'Payment needs review' : `Payment ${order.status}`}</Text><Text accessibilityLiveRegion="polite" style={s.body}>{statusCopy[order.status]}</Text><Text selectable style={s.small}>Order {order.id}</Text>
       {isPreview && previewPaymentControls?.(order)}
-      {['pending', 'reconciliation'].includes(order.status) && <Action label="Check payment status" secondary disabled={busy} onPress={() => void checkPayment()} />}
+      {['pending', 'reconciliation', 'disputed'].includes(order.status) && <Action label="Check payment status" secondary disabled={busy} onPress={() => void checkPayment()} />}
       {['failed', 'canceled'].includes(order.status) && <Action label="Try a new checkout" secondary disabled={busy} onPress={() => { setOrder(undefined); checkoutRequest.current = undefined; }} />}
-      {order.status === 'paid' && topup && <Action label="Return to your selection" onPress={() => { setSession(leavePoints(session!)); setOrder(undefined); checkoutRequest.current = undefined; }} />}
+      {['paid', 'refunded'].includes(order.status) && topup && <Action label="Return to your selection" onPress={() => { setSession(leavePoints(session!)); setOrder(undefined); checkoutRequest.current = undefined; }} />}
     </View>;
   }
 
   return <View style={s.frame}>
     {isPreview && <View style={s.previewBanner}><Text style={s.previewText}>TEST PREVIEW · no real payments or gameplay</Text></View>}
-    <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingTop: isPreview ? 24 : Math.max(insets.top, 44), paddingBottom: Math.max(insets.bottom, 24) + 16 }}>
+    <ScrollView ref={scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingTop: isPreview ? 24 : Math.max(insets.top, 44), paddingBottom: Math.max(insets.bottom, 24) + 16 }}>
       <View style={s.nav}><Pressable accessibilityRole="button" accessibilityLabel={topup ? 'Back to your selection' : 'Back'} accessibilityState={{ disabled: locked }} disabled={locked} onPress={back} style={s.back}><Icon name="back" size={20} /></Pressable><Text accessibilityRole="header" style={s.navTitle}>{title}</Text>{page.screen === 'coop' && !topup ? <Pressable accessibilityRole="button" disabled={locked} onPress={() => go({ screen: 'catalog', ownedOnly: true })} style={s.navEnd}><Text style={s.link}>My items</Text></Pressable> : <Pressable accessibilityRole="button" accessibilityLabel={`Get points, balance ${money(snapshot.points)}`} disabled={locked || topup} onPress={points} style={s.wallet}><Text style={s.coin}>ϟ</Text><Text style={s.walletValue}>{money(snapshot.points)}</Text><Text style={s.link}>+</Text></Pressable>}</View>
       <View style={s.content}>
-        {error && <Text accessibilityRole="alert" style={s.error}>{error}</Text>}
-        {notice && <Text accessibilityLiveRegion="polite" style={s.notice}>{notice}</Text>}
+        {error ? <Text accessibilityRole="alert" style={s.error}>{error}</Text> : null}
+        {notice ? <Text accessibilityLiveRegion="polite" style={s.notice}>{notice}</Text> : null}
         {pendingCommand && <Action label={busy ? 'Confirming…' : 'Retry the same action'} disabled={busy} onPress={() => void mutate(pendingCommand.command, 'Confirmed. Your coop is up to date.')} />}
 
         {topup ? <>
@@ -260,7 +299,7 @@ const s = StyleSheet.create({
   walletValue: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: '#17212B' },
   content: { paddingHorizontal: 24, gap: 12 },
   heading: { gap: 8, paddingBottom: 6 },
-  title: { fontFamily: 'Outfit_600SemiBold', fontSize: 34, lineHeight: 36, letterSpacing: -1.2, color: '#000' },
+  title: { fontFamily: 'Outfit_600SemiBold', fontSize: 32, lineHeight: 35, letterSpacing: -1.12, color: '#000' },
   body: { fontFamily: 'Inter_400Regular', fontSize: 13, lineHeight: 20, color: '#566273' },
   small: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, color: '#566273' },
   centerSmall: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 18, color: '#566273', textAlign: 'center' },

@@ -6,8 +6,9 @@ import type { Id } from '../../convex/_generated/dataModel';
 import { ShopFailure, type ShopGateway } from '../../src/shop';
 import { safeCheckoutUrl } from './model';
 
-export function createConvexShopGateway(client: ConvexReactClient): ShopGateway {
+export function createConvexShopGateway(client: ConvexReactClient, accountId: string): ShopGateway {
   return {
+    scopeKey: accountId,
     read: async () => {
       const snapshot = await client.query(api.shop.snapshot, {});
       return Platform.OS === 'web' ? snapshot : { ...snapshot, points: null, inventory: [], pendingOrder: undefined, capabilities: { accessories: false, boosters: false, stones: false, checkout: false, reason: 'Native paid goods are unavailable pending a storefront and distribution decision.' } };

@@ -34,6 +34,7 @@ export async function shopSnapshot(ctx: QueryCtx, profile: Doc<'profiles'>): Pro
     capabilities: {
       accessories: Boolean(config?.scarfApproved && !held), boosters: false, stones: false,
       checkout: Boolean(config?.packs.length && sandboxConnection() && !disputed && !reconciliation),
+      checkoutSkus: config?.packs.map(pack => pack.sku) ?? [],
       reason: held ? 'Your wallet needs payment review. Spending and accessories are paused.' : 'Proposed prices and paid gameplay are disabled until approved sandbox catalog configuration. Configuration is not live verification.',
     },
   };

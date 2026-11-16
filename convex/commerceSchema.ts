@@ -8,7 +8,7 @@ export const accessoryValidator = v.union(v.literal('sunday-cap'), v.literal('cl
 export const orderStatusValidator = v.union(v.literal('pending'), v.literal('paid'), v.literal('failed'), v.literal('canceled'), v.literal('disputed'), v.literal('refunded'), v.literal('reconciliation'));
 export const orderValidator = v.object({
   id: v.string(), sku: skuValidator, status: orderStatusValidator,
-  purchaseUrl: v.optional(v.string()), createdAt: v.number(),
+  purchaseUrl: v.optional(v.string()), requestKey: v.optional(v.string()), createdAt: v.number(),
 });
 const nullableString = v.union(v.string(), v.null());
 const nullableNumber = v.union(v.number(), v.null());
@@ -37,6 +37,7 @@ export const commerceTables = {
     paymentId: v.optional(v.string()), createdAt: v.number(), updatedAt: v.number(),
     pointsCredits: v.optional(v.number()), productId: v.optional(v.string()), catalogRevision: v.optional(v.string()),
     checkoutClosed: v.optional(v.boolean()), closeAttempts: v.optional(v.number()),
+    expiryJobId: v.optional(v.id('_scheduled_functions')), verificationVersion: v.optional(v.number()),
   }).index('by_profileId_and_requestKey', ['profileId', 'requestKey'])
     .index('by_profileId_and_status', ['profileId', 'status'])
     .index('by_profileId_and_createdAt', ['profileId', 'createdAt']).index('by_intentId', ['intentId'])
@@ -62,6 +63,8 @@ export const commerceTables = {
   commercePayments: defineTable({
     paymentId: v.string(), orderId: v.id('commerceOrders'),
     revoked: v.boolean(), updatedAt: v.number(),
+    refundHeld: v.optional(v.boolean()),
+    disputeHeld: v.optional(v.boolean()),
   }).index('by_paymentId', ['paymentId']),
   commerceEvents: defineTable({
     eventId: v.string(), payloadHash: v.string(), payload: eventPayloadValidator,
