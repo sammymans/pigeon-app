@@ -290,3 +290,14 @@ test('keeps the draft while disconnected and only enables sending after reconnec
   await expect(fly(page)).toBeEnabled();
   await expect(page.getByRole('textbox', { name: 'Your letter' })).toHaveValue('Meet me for coffee when this finally lands?');
 });
+
+test('opens only server-authorized caught text without promising return custody', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('tab', { name: 'My flights' })).toBeVisible();
+  await page.evaluate(() => { const fixture = (window as any).messagingFixture; Object.assign(fixture.state.flights[0], { role: 'catcher', state: 'intercepted', visibility: 'open', body: 'AUTHORIZED CAUGHT TEXT' }); fixture.refresh(); fixture.openFlight('fixture-flight-2'); });
+  await expect(page.getByText('AUTHORIZED CAUGHT TEXT', { exact: true })).toBeVisible();
+  await expect(page.getByText('CAUGHT · OPENED FOR YOU')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Caught letters|Open caught letter|send.*home|return/i })).toHaveCount(0);
+  await page.evaluate(() => { const fixture = (window as any).messagingFixture; fixture.state.flights[0].role = 'recipient'; fixture.refresh(); });
+  await expect(page.getByText('AUTHORIZED CAUGHT TEXT', { exact: true })).toHaveCount(0);
+});

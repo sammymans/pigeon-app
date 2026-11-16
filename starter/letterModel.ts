@@ -113,7 +113,9 @@ export function flightStatus(flight: FlightSummary, serverNow: number | null): s
 }
 
 export function readableBody(flight: FlightDetail): string | null {
-  return flight.state === 'delivered' && (flight.role === 'sender' || flight.role === 'recipient') && typeof flight.body === 'string' ? flight.body : null;
+  if (typeof flight.body !== 'string') return null;
+  if (flight.state === 'delivered' && (flight.role === 'sender' || flight.role === 'recipient')) return flight.body;
+  return flight.visibility === 'open' && flight.state === 'intercepted' && flight.role === 'catcher' ? flight.body : null;
 }
 
 export function exactTime(timestamp: number): string {
