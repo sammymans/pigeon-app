@@ -7,7 +7,7 @@ export type ShopSnapshot = {
   revision: string;
   source: 'server' | 'test-preview';
   birds: readonly Bird[];
-  points: number;
+  points: number | null;
   inventory: readonly InventoryItem[];
   serverNow: number;
   capabilities: { accessories: boolean; boosters: boolean; stones: boolean; checkout: boolean; reason?: string };
@@ -16,6 +16,7 @@ export type PaymentStatus = 'pending' | 'paid' | 'canceled' | 'failed' | 'refund
 export type ShopOrder = { id: string; sku: PackId | 'extra-pigeon'; status: PaymentStatus; purchaseUrl?: string };
 export type ShopEntry =
   | { from: 'home'; selectedBirdId?: string }
+  | { from: 'shop'; ownedOnly?: boolean; selectedBirdId?: string }
   | { from: 'compose'; selectedBirdId?: string; draftKey: string }
   | { from: 'sky' }
   | { from: 'item'; itemId: ItemId; selectedBirdId?: string };
@@ -36,11 +37,15 @@ export type ShopGateway = {
   openCheckout: (url: string) => Promise<void>;
 };
 
+export class ShopFailure extends Error {
+  constructor(public readonly code: 'insufficient' | 'stale' | 'unavailable' | 'rejected', message: string) { super(message); }
+}
+
 export const accessoryIds: readonly AccessoryId[] = ['sunday-cap', 'cloud-scarf', 'flight-goggles'];
 export const proposedCatalog = {
-  'sunday-cap': { title: 'Sunday cap', points: 80, description: 'A little shade for a Sunday adventure.' },
+  'sunday-cap': { title: 'Sunday cap', points: null, description: 'A little shade for a Sunday adventure.' },
   'cloud-scarf': { title: 'Cloud scarf', points: 60, description: 'A little warmth for a long flight.' },
-  'flight-goggles': { title: 'Flight goggles', points: 80, description: 'For the scenic route home.' },
+  'flight-goggles': { title: 'Flight goggles', points: null, description: 'For the scenic route home.' },
   'tailwind-treat': { title: 'Tailwind treats', points: 40, description: 'One bird · next flight\n10% faster delivery' },
   'flock-guard': { title: 'Flock guard', points: 100, description: 'All birds · 1 hour\nHarder to intercept' },
   'extra-pigeon': { title: 'One more little friend', dollars: 1, description: 'Add a permanent pigeon' },
