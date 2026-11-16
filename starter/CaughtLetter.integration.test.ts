@@ -11,9 +11,9 @@ const harness = vi.hoisted(() => ({
   status: { status: 'profileRequired', accountId: 'account-a', username: 'account_a', pigeons: [{ id: 'bird-a', name: 'Mochi' }] },
   demo: false,
   detail: null as FlightDetail | null,
-  complete: vi.fn(), signOut: vi.fn(), signIn: vi.fn(), sendCode: vi.fn(),
+  complete: vi.fn(), signOut: vi.fn(), signIn: vi.fn(), sendCode: vi.fn(), ensureFlock: vi.fn().mockResolvedValue({ pigeons: [] }),
   draft: {
-    draft: { version: 2, body: 'Keep this draft', recipientId: '', visibility: 'open', openAcknowledged: false, pending: null },
+    draft: { version: 2, body: 'Keep this draft', recipientId: '', pigeonId: 'bird-a', visibility: 'open', openAcknowledged: false, pending: null },
     locked: false, busy: false, error: '', saved: true, receipt: null, pendingRetry: false, legacySealedDraft: false,
     edit: vi.fn(), send: vi.fn(), startReply: vi.fn(), retryStorage: vi.fn(), acknowledgeOpenSkies: vi.fn(), convertLegacyToOpenSkies: vi.fn(),
   },
@@ -24,13 +24,14 @@ vi.mock('convex/react', () => ({
   useConvexAuth: () => ({ isAuthenticated: harness.authenticated, isLoading: harness.loading }),
   useConvexConnectionState: () => ({ isWebSocketConnected: true }),
   useAction: () => harness.sendCode,
-  useMutation: () => harness.complete,
+  useMutation: (reference: Parameters<typeof getFunctionName>[0]) => getFunctionName(reference) === 'onboarding:ensureFlock' ? harness.ensureFlock : harness.complete,
   useQuery: (reference: Parameters<typeof getFunctionName>[0], args: unknown) => {
     if (args === 'skip') return undefined;
     switch (getFunctionName(reference)) {
       case 'onboarding:status': return harness.status;
       case 'profiles:me': return harness.profileLoaded ? { id: `profile-${harness.status.accountId}`, handle: harness.status.username, demo: harness.demo, equipped: 'classic', cityId: 'london' } : undefined;
       case 'social:list': return [];
+      case 'flock:list': return [{ id: 'bird-a', name: 'Mochi', ready: true, deliveries: 0 }];
       case 'flights:list': return { flights: [], total: 0, serverTime: 1000 };
       case 'flights:detail': return { flight: harness.detail, serverTime: 1000 };
       case 'starterPair:status': return null;
@@ -38,7 +39,7 @@ vi.mock('convex/react', () => ({
     }
   },
 }));
-vi.mock('react-native', () => ({ Pressable: 'Pressable', Text: 'Text', TextInput: 'TextInput', View: 'View' }));
+vi.mock('react-native', () => ({ Pressable: 'Pressable', Text: 'Text', TextInput: 'TextInput', View: 'View', KeyboardAvoidingView: 'KeyboardAvoidingView', ScrollView: 'ScrollView', Switch: 'Switch', Platform: { OS: 'web' }, StyleSheet: { create: (styles: unknown) => styles } }));
 vi.mock('./Onboarding', () => ({ FlockReady: 'FlockReady', PhoneOnboarding: 'PhoneOnboarding', ProfileOnboarding: 'ProfileOnboarding' }));
 vi.mock('./useDraft', () => ({ useDraft: () => harness.draft }));
 vi.mock('./useServerClock', () => ({ useServerClock: () => ({ serverNow: 1000, syncError: false }) }));
@@ -50,7 +51,7 @@ vi.mock('./ui', () => ({
   Button: 'Button', Envelope: 'Envelope', Field: 'Field', Link: 'Link', Loading: 'Loading', Notice: 'Notice',
   PostalCard: 'PostalCard', ScreenHeader: 'ScreenHeader', colors: {}, s: {},
 }));
-vi.mock('./page03/atoms', () => ({ a: {}, PageFrame: 'PageFrame', usePageInsets: () => ({ top: 0, bottom: 0 }) }));
+vi.mock('./page03/atoms', () => ({ a: {}, font: {}, palette: {}, PageHeader: 'PageHeader', PrimaryButton: 'PrimaryButton', Icon: 'Icon', IconButton: 'IconButton', PageFrame: 'PageFrame', usePageInsets: () => ({ top: 0, bottom: 0 }) }));
 vi.mock('./page03/MapScreen', () => ({ MapScreen: 'MapScreen', HomeSheet: 'HomeSheet', FlockSheet: 'FlockSheet', atlanticLand: [] }));
 
 let renderer: ReactTestRenderer | undefined;
@@ -198,9 +199,9 @@ describe('mounted account shell with the actual Mailbox and mocked services', ()
     expect(nodes('ScreenHeader')).toHaveLength(0);
     harness.profileLoaded = true;
     await update();
-    expect(node('ScreenHeader').props.title).toBe('Send a pigeon');
+    expect(node('PageHeader').props.title).toBe('Send a pigeon');
     expect(node('TextInput').props.value).toBe('Keep this draft');
-    await act(async () => node('ScreenHeader').props.onBack());
+    await act(async () => node('PageHeader').props.onClose());
     expect(node('MapScreen').props.scope).toBe('mine');
     await act(async () => node('MapScreen').props.onMenu());
     await act(async () => node('Link').props.onPress());
