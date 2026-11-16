@@ -9,7 +9,7 @@ export const flightState = v.union(v.literal('in_flight'), v.literal('delivered'
 export const connectionState = v.union(v.literal('pending'), v.literal('accepted'), v.literal('declined'));
 export const outcome = v.union(v.literal('caught'), v.literal('missed'), v.literal('expired'), v.literal('delivered'));
 export const event = v.object({ at: v.number(), label: v.string() });
-export const profileDto = v.object({ id: v.string(), handle: v.string(), cityId, equipped: outfit, demo: v.boolean() });
+export const profileDto = v.object({ id: v.string(), handle: v.string(), displayName: v.optional(v.string()), cityId: v.optional(cityId), equipped: outfit, demo: v.boolean() });
 export const summaryDto = v.object({
   id: v.string(), courier: v.string(), origin: city, destination: city,
   visibility, defense, distanceKm: v.number(), departedAt: v.number(), arrivesAt: v.number(),

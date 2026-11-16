@@ -1,5 +1,7 @@
 # Pigeon first letters
 
+The current entry flow is phone sign-up/sign-in, username setup, and the five-pigeon welcome. See [phone authentication setup and integration handoff](docs/phone-auth.md) before deployment: SMS is disabled unless explicitly configured, legal URLs still require approval, and the messaging integration owns deferred city selection for a first send. The anonymous pair APIs below are retained for compatibility but are no longer promoted by the entry UI.
+
 An Expo Go-compatible, two-person sealed-letter demo: pair two real anonymous sessions, compose, wait for server-confirmed delivery, read, and send a new timed reply. Demo travel is explicitly labeled 30–90 seconds alongside the normal distance estimate. The public counter remains available through **Connection diagnostic**.
 
 This is the first-letter slice, not the full Paper v1 design or the archived product. No new catching, Rive, payments, discovery, or notification UI is included. The complete old backend is retained to preserve existing cloud functions/data; see [backend retention](docs/backend-retention.md). Never deploy the reduced schema from the earlier counter-only foundation over the shared backend.

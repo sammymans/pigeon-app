@@ -5,6 +5,8 @@ import { commerceTables } from './commerceSchema';
 import { city, cityId, connectionState, defense, event, flightState, outcome, outfit, visibility } from './validators';
 
 export default defineSchema({
+  phoneLimits: defineTable({ key: v.string(), windowStart: v.number(), count: v.number(), retryAt: v.number() }).index('by_key', ['key']),
+  pigeons: defineTable({ ownerId: v.id('profiles'), name: v.string(), slot: v.number() }).index('by_ownerId', ['ownerId']),
   starterDemo: defineTable({ key: v.literal('shared'), value: v.number() }).index('by_key', ['key']),
   starterPairs: defineTable({
     ownerId: v.id('profiles'), partnerId: v.optional(v.id('profiles')), namespace: v.string(),
@@ -13,7 +15,8 @@ export default defineSchema({
   ...authTables,
   ...commerceTables,
   profiles: defineTable({
-    userId: v.id('users'), handle: v.string(), cityId, equipped: outfit, demo: v.boolean(),
+    userId: v.id('users'), handle: v.string(), cityId: v.optional(cityId), equipped: outfit, demo: v.boolean(),
+    displayName: v.optional(v.string()), onboardingCompletedAt: v.optional(v.number()),
     namespace: v.string(), catchCooldownUntil: v.optional(v.number()), catchCoolingDown: v.optional(v.boolean()),
   }).index('by_userId', ['userId']).index('by_handle', ['handle']).index('by_namespace', ['namespace']),
   flights: defineTable({

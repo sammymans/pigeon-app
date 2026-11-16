@@ -24,7 +24,8 @@ export type FlightRole = 'sender' | 'recipient' | 'catcher' | 'public';
 export type Profile = {
   id: string;
   handle: string;
-  cityId: CityId;
+  displayName?: string;
+  cityId?: CityId;
   equipped: Outfit;
   demo: boolean;
 };
@@ -102,7 +103,7 @@ export type LaunchInput = {
 export const OPEN_SKIES_DISCLOSURE = 'Someone may catch this pigeon, read this message, and ask to connect with you. If caught, it will not reach its recipient.';
 export const CONNECTION_REQUEST = 'Your pigeon introduced us. Want to exchange letters?';
 
-export function cityById(id: string): City {
+export function cityById(id: string | undefined): City {
   const city = cities.find((entry) => entry.id === id);
   if (!city) throw new Error('Choose a supported home city.');
   return city;
