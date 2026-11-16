@@ -22,6 +22,8 @@ import type * as phoneAuth from "../phoneAuth.js";
 import type * as phoneProtocol from "../phoneProtocol.js";
 import type * as profiles from "../profiles.js";
 import type * as social from "../social.js";
+import type * as shop from "../shop.js";
+import type * as shopCatalog from "../shopCatalog.js";
 import type * as starterDemo from "../starterDemo.js";
 import type * as starterPair from "../starterPair.js";
 import type * as validators from "../validators.js";
@@ -50,6 +52,8 @@ declare const fullApi: ApiFromModules<{
   phoneProtocol: typeof phoneProtocol;
   profiles: typeof profiles;
   social: typeof social;
+  shop: typeof shop;
+  shopCatalog: typeof shopCatalog;
   starterDemo: typeof starterDemo;
   starterPair: typeof starterPair;
   validators: typeof validators;

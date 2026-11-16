@@ -38,7 +38,8 @@ export function paymentSnapshot(value: unknown): PaymentSnapshot {
     taxBehavior: text(payment.tax_behavior),
     refundedCents: payment.refunded_amount === null ? 0 : moneyCents(payment.refunded_amount),
     status: text(payment.status), substatus: text(payment.substatus),
-    validLineItem: items.length === 1 && item.variant_id === payment.variant_id && item.quantity === 1 && moneyCents(item.subtotal) === AVIATOR_CENTS,
+    productId: text(payment.product_id), lineProductId: text(item.product_id),
+    validLineItem: items.length === 1 && item.variant_id === payment.variant_id && item.quantity === 1 && moneyCents(item.subtotal) !== null && moneyCents(item.subtotal) === moneyCents(payment.subtotal),
   };
 }
 
@@ -50,24 +51,35 @@ export function eventPayload(value: unknown, headerId: string): EventPayload {
   return {
     type, accountId: text(event.account_id), apiVersion: text(event.api_version),
     apiVersionDate: text(event.api_version_date), paymentId: payment?.id ?? text(record(data.payment).id),
-    resourceStatus: text(data.status), payment, envelopeValid: event.id === headerId,
+    resourceStatus: text(data.status), resourceId: text(data.id), payment, envelopeValid: event.id === headerId,
   };
 }
 
-export function sandboxConfig() {
+export function sandboxConnection() {
   const apiKey = env.WHOP_SANDBOX_API_KEY;
   const webhookSecret = env.WHOP_SANDBOX_WEBHOOK_SECRET;
   const accountId = env.WHOP_SANDBOX_ACCOUNT_ID;
-  const variantId = env.WHOP_SANDBOX_VARIANT_ID;
   const origin = env.PIGEON_PUBLIC_ORIGIN;
-  if (!apiKey?.trim() || !webhookSecret?.startsWith('ws_') || !accountId?.match(/^biz_[A-Za-z0-9]+$/) || !variantId?.match(/^plan_[A-Za-z0-9]+$/) || !origin) return null;
+  if (!apiKey?.trim() || !webhookSecret?.startsWith('ws_') || !accountId?.match(/^biz_[A-Za-z0-9]+$/) || !origin) return null;
   try {
     const url = new URL(origin);
     if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') return null;
-    return { apiKey, webhookSecret, accountId, variantId, origin: url.origin };
+    return { apiKey, webhookSecret, accountId, origin: url.origin };
   } catch {
     return null;
   }
+}
+
+export function sandboxConfig() {
+  const connection = sandboxConnection();
+  const variantId = env.WHOP_SANDBOX_VARIANT_ID;
+  return connection && variantId?.match(/^plan_[A-Za-z0-9]+$/) ? { ...connection, variantId } : null;
+}
+
+export function requireSandboxConnection() {
+  const config = sandboxConnection();
+  if (!config) throw new ConvexError('Whop sandbox is not configured. No payment has been started.');
+  return config;
 }
 
 export function requireSandboxConfig() {
@@ -76,9 +88,9 @@ export function requireSandboxConfig() {
   return config;
 }
 
-export async function whopRequest(path: string, apiKey: string, body?: Record<string, unknown>, idempotencyKey?: string): Promise<unknown> {
+export async function whopRequest(path: string, apiKey: string, body?: Record<string, unknown>, idempotencyKey?: string, method?: 'DELETE'): Promise<unknown> {
   const response = await fetch(`${WHOP_API_BASE}${path}`, {
-    method: body ? 'POST' : 'GET',
+    method: method ?? (body ? 'POST' : 'GET'),
     headers: {
       Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json',
       'Api-Version-Date': WHOP_API_VERSION,
@@ -94,13 +106,14 @@ export async function whopRequest(path: string, apiKey: string, body?: Record<st
 
 export function paymentMismatch(payment: PaymentSnapshot, expected: {
   intentId: string; accountId: string; variantId: string; checkoutId?: string;
-  environment: string; currency: string; baseCents: number; taxBasis: 'exclusive';
+  environment: string; currency: string; baseCents: number; taxBasis: 'exclusive'; productId?: string;
 }): string | null {
   if (payment.accountId !== expected.accountId) return 'wrong_account';
   if (payment.environment !== expected.environment) return 'wrong_environment';
   if (payment.intentId !== expected.intentId) return 'wrong_order';
   if (!expected.checkoutId || payment.checkoutId !== expected.checkoutId) return 'wrong_checkout';
   if (payment.variantId !== expected.variantId) return 'wrong_variant';
+  if (expected.productId && (payment.productId !== expected.productId || payment.lineProductId !== expected.productId)) return 'wrong_product';
   if (payment.currency !== expected.currency) return 'wrong_currency';
   if (!payment.validLineItem || payment.subtotalCents !== expected.baseCents) return 'wrong_base_price';
   if (payment.taxCents === null || payment.totalCents === null || payment.refundedCents === null) return 'invalid_money';
