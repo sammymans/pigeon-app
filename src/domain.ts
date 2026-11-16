@@ -53,6 +53,7 @@ export type FlightSummary = {
 export type FlightDetail = FlightSummary & {
   body?: string;
   canCatch: boolean;
+  canSlingshot?: boolean;
   canRequest: boolean;
   canResend: boolean;
   otherProfileId?: string;

@@ -3,11 +3,14 @@ import { useAction, useConvexAuth, useConvexConnectionState, useMutation, useQue
 import { Component, useState, type ReactNode } from 'react';
 import { Text, View } from 'react-native';
 import { api } from '../convex/_generated/api';
+import type { Profile } from '../src/domain';
 import { Mailbox } from './Mailbox';
 import { FlockReady, PhoneOnboarding, ProfileOnboarding } from './Onboarding';
 import { onboardingRoute } from './onboardingModel';
 import { Button, Link, Loading, Notice, s } from './ui';
 import { PageFrame, usePageInsets } from './page03/atoms';
+import { CatchGame } from './game/CatchGame';
+import { useCatchTransport } from './game/useCatchTransport';
 
 export function LetterApp(props: { deployment: string; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void }) {
   return <QueryBoundary><AccountRouter {...props} /></QueryBoundary>;
@@ -55,7 +58,15 @@ function Home(props: { deployment: string; connected: boolean; initialCompose: b
   const profile = useQuery(api.profiles.me, {});
   if (profile === undefined) return <Loading label="Finding your nest…" />;
   if (!profile) return <Notice error>Your profile could not be loaded. Please reopen the app to retry.</Notice>;
-  return <Mailbox key={profile.id} profile={profile} {...props} onNavigate={() => {}} />;
+  return <GameHome key={profile.id} profile={profile} {...props} />;
+}
+
+function GameHome({ profile, ...props }: Parameters<typeof Home>[0] & { profile: Profile }) {
+  const [encounterId, setEncounterId] = useState<string | null>(null);
+  const [openFlightId, setOpenFlightId] = useState<string>();
+  const transport = useCatchTransport();
+  if (encounterId) return <CatchGame flightId={encounterId} connected={props.connected} transport={transport} onExit={() => setEncounterId(null)} onOpenLetter={({ flightId }) => { setOpenFlightId(flightId); setEncounterId(null); }} />;
+  return <Mailbox key={profile.id} profile={profile} {...props} openFlightId={openFlightId} onOpenFlightHandled={() => setOpenFlightId(undefined)} onCatch={props.onCatch ?? (id => { setOpenFlightId(undefined); setEncounterId(id); })} onNavigate={() => setOpenFlightId(undefined)} />;
 }
 
 class QueryBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
