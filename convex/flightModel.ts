@@ -18,8 +18,12 @@ export async function settleFlight(ctx: MutationCtx, flight: Doc<'flights'>, now
     const attempt = await ctx.db.get('catchAttempts', flight.activeAttemptId);
     if (attempt && !attempt.outcome) await ctx.db.patch('catchAttempts', attempt._id, { outcome: 'delivered', hits: [false, false, false] });
   }
+  if (flight.activeEncounterId) {
+    const encounter = await ctx.db.get('slingshotEncounters', flight.activeEncounterId);
+    if (encounter && ['ready', 'active', 'projectile'].includes(encounter.state)) await ctx.db.patch('slingshotEncounters', encounter._id, { state: 'delivered', endedAt: now });
+  }
   const patch = {
-    state: 'delivered' as const, catchOpen: false, activeAttemptId: undefined, updatedAt: now,
+    state: 'delivered' as const, catchOpen: false, activeAttemptId: undefined, activeEncounterId: undefined, updatedAt: now,
     events: [...flight.events, { at: flight.arrivesAt, label: 'Delivered' }],
   };
   await ctx.db.patch('flights', flight._id, patch);
@@ -85,9 +89,19 @@ export async function launchFor(ctx: MutationCtx, sender: Doc<'profiles'>, input
 }
 
 export async function catchEligible(ctx: QueryCtx, flight: Doc<'flights'>, profile: Doc<'profiles'> | null) {
-  if (!profile || flight.state !== 'in_flight' || flight.visibility !== 'open' || !flight.catchOpen || flight.activeAttemptId || flight.attemptCount >= 2 || profile.catchCoolingDown) return false;
+  if (!profile || flight.state !== 'in_flight' || flight.visibility !== 'open' || !flight.catchOpen || flight.activeAttemptId || flight.activeEncounterId || flight.attemptCount >= 2 || profile.catchCoolingDown) return false;
   if (flight.senderId === profile._id || flight.recipientId === profile._id || flight.namespace !== profile.namespace) return false;
   if (await areBlocked(ctx, profile._id, flight.senderId) || await areBlocked(ctx, profile._id, flight.recipientId)) return false;
+  if (await ctx.db.query('slingshotEncounters').withIndex('by_flightId_and_catcherId', q => q.eq('flightId', flight._id).eq('catcherId', profile._id)).unique()) return false;
+  return !(await ctx.db.query('catchAttempts').withIndex('by_flightId_and_catcherId', q => q.eq('flightId', flight._id).eq('catcherId', profile._id)).unique());
+}
+
+export async function slingshotEligible(ctx: QueryCtx, flight: Doc<'flights'>, profile: Doc<'profiles'> | null) {
+  if (!profile || flight.state !== 'in_flight' || flight.visibility !== 'open' || flight.activeAttemptId || flight.activeEncounterId || flight.arrivesAt <= Date.now()) return false;
+  if ('tripId' in flight || 'tripLeg' in flight) return false;
+  if (flight.senderId === profile._id || flight.recipientId === profile._id || flight.namespace !== profile.namespace) return false;
+  if (await areBlocked(ctx, profile._id, flight.senderId) || await areBlocked(ctx, profile._id, flight.recipientId)) return false;
+  if (await ctx.db.query('slingshotEncounters').withIndex('by_flightId_and_catcherId', q => q.eq('flightId', flight._id).eq('catcherId', profile._id)).unique()) return false;
   return !(await ctx.db.query('catchAttempts').withIndex('by_flightId_and_catcherId', (q) => q.eq('flightId', flight._id).eq('catcherId', profile._id)).unique());
 }
 

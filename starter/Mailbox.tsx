@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from 'convex/react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import { api } from '../convex/_generated/api';
 import { cityById, durationSeconds, formatDuration, OPEN_SKIES_DISCLOSURE, type FlightSummary, type Profile } from '../src/domain';
@@ -17,7 +17,7 @@ import { skyMapData } from './page03/mapData';
 type Page = { screen: 'postbox' } | { screen: 'compose'; reply?: boolean } | { screen: 'detail'; id: string; sent?: boolean };
 type DraftController = ReturnType<typeof useDraft>;
 
-export function Mailbox({ profile, deployment, connected, initialCompose = false, onCatch, onReturn, onNavigate, onMenu }: { profile: Profile; deployment: string; connected: boolean; initialCompose?: boolean; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void; onNavigate: () => void; onMenu?: () => void }) {
+export function Mailbox({ profile, deployment, connected, initialCompose = false, openFlightId, onOpenFlightHandled, onCatch, onReturn, onNavigate, onMenu }: { profile: Profile; deployment: string; connected: boolean; initialCompose?: boolean; openFlightId?: string; onOpenFlightHandled?: () => void; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void; onNavigate: () => void; onMenu?: () => void }) {
   const connections = useQuery(api.social.list, {});
   const account = useQuery(api.onboarding.status, profile.demo ? 'skip' : {});
   const flights = useQuery(api.flights.list, { scope: 'mine', demo: profile.demo });
@@ -37,6 +37,19 @@ export function Mailbox({ profile, deployment, connected, initialCompose = false
   const world = useQuery(api.flights.list, scope === 'world' ? { scope: 'world', demo: profile.demo } : 'skip');
   const mapFlights = visibleFlights((scope === 'mine' ? flights : world)?.flights ?? [], scope);
   const selectedFlight = mapFlights.find((flight) => flight.id === selected) ?? mapFlights[0];
+
+  const handledFlight = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!openFlightId) { handledFlight.current = undefined; return; }
+    if (handledFlight.current === openFlightId || draft.busy) return;
+    handledFlight.current = openFlightId;
+    setInbox(false);
+    setScope('mine');
+    setFlock(false);
+    setSelected(openFlightId);
+    setPage({ screen: 'detail', id: openFlightId });
+    onOpenFlightHandled?.();
+  }, [openFlightId, draft.busy, onOpenFlightHandled]);
 
   function go(next: Page) {
     setPage(next);
@@ -78,7 +91,7 @@ export function Mailbox({ profile, deployment, connected, initialCompose = false
       </>}
     </> : page.screen === 'compose' ? <Compose mochi={Boolean(account?.pigeons.some(bird => bird.name === 'Mochi'))} profile={profile} friends={friends} friendsLoading={connections === undefined} controller={draft} connected={connected} replying={Boolean(page.reply)} replyTarget={replyTarget} onBack={() => go({ screen: 'postbox' })} onNavigate={onNavigate} onKeep={() => setReplyTarget(null)} onReplace={() => { if (replyTarget) draft.startReply(replyTarget); setReplyTarget(null); }} onSend={() => void send()} /> : <>
       <ScreenHeader title={page.sent ? 'On its way' : 'Your letter'} disabled={draft.busy} onBack={() => go({ screen: 'postbox' })} />
-      <LetterDetail id={page.id} serverNow={clock.serverNow} justSent={Boolean(page.sent)} onReply={reply} onReturn={onReturn} onHome={() => go({ screen: 'postbox' })} />
+      <LetterDetail id={page.id} serverNow={clock.serverNow} justSent={Boolean(page.sent)} onReply={reply} onHome={() => go({ screen: 'postbox' })} />
     </>}
   </PageFrame>;
 }
@@ -152,17 +165,16 @@ function Compose({ mochi, profile, friends, friendsLoading, controller, connecte
   </View>;
 }
 
-function LetterDetail({ id, serverNow, justSent, onReply, onReturn, onHome }: { id: string; serverNow: number | null; justSent: boolean; onReply: (recipientId: string) => void; onReturn?: (flightId: string) => void; onHome: () => void }) {
+function LetterDetail({ id, serverNow, justSent, onReply, onHome }: { id: string; serverNow: number | null; justSent: boolean; onReply: (recipientId: string) => void; onHome: () => void }) {
   const result = useQuery(api.flights.detail, { id });
   if (result === undefined) return <Loading label="Fetching the server-confirmed flight…" />;
   const flight = result.flight;
   if (!flight) return <Notice>This letter is unavailable to this account. No private contents have been loaded.</Notice>;
   const body = readableBody(flight);
   return <View style={s.stack}>
-    {flight.role === 'catcher' && flight.state === 'intercepted' && <Button label={onReturn ? 'Open caught letter →' : 'Caught letters · coming soon'} disabled={!onReturn} onPress={() => onReturn?.(flight.id)} />}
     {justSent && <View style={s.dock}><View style={{ alignSelf: 'center' }}><PaperPigeon size={108} /></View><Text style={s.subtitle}>Your pigeon’s on the way.</Text><Text style={s.body}>To @{flight.recipientHandle ?? 'your pen pal'} · {flight.destination.name}</Text><Text style={s.small}>The server accepted your letter. Its journey continues even when you close the app.</Text><Button label="Back to my flights" secondary onPress={onHome} /></View>}
     <View style={s.notice}><View style={s.between}><Text accessibilityLiveRegion="polite" style={s.badgeText}>{flightStatus(flight, serverNow)}</Text><Text style={s.small}>{flight.visibility === 'sealed' ? 'Sealed' : 'Open Skies'}</Text></View><Text style={s.small}>{flight.demo ? 'Demo speed · ' : ''}{flight.origin.name} → {flight.destination.name}</Text></View>
-    {body !== null ? <><PostalCard route={`${flight.origin.name} → ${flight.destination.name}`} signature={`@${flight.senderHandle ?? 'your pen pal'}`}><Text style={s.eyebrow}>DELIVERED · OPENED FOR YOU</Text><Text selectable style={s.letterBody}>{body}</Text></PostalCard>{flight.role === 'recipient' && flight.otherProfileId && <><Button label="Write a reply →" onPress={() => onReply(flight.otherProfileId!)} /><Text style={s.small}>No reply deadline. Your reply starts blank and takes a new timed flight.</Text></>}</> : <View style={s.card}><Envelope /><Text style={s.subtitle}>{flight.state === 'intercepted' ? 'This flight was intercepted.' : flight.state === 'delivered' ? 'Letter text is unavailable.' : 'Still on the wing.'}</Text><Text style={s.body}>{flight.state === 'intercepted' ? 'This letter did not reach its destination.' : flight.state === 'delivered' ? 'The server has not returned readable text for this account.' : 'Your recipient’s copy stays closed until the server confirms delivery. A finished countdown never opens it.'}</Text></View>}
+    {body !== null ? <><PostalCard route={`${flight.origin.name} → ${flight.destination.name}`} signature={`@${flight.senderHandle ?? 'your pen pal'}`}><Text style={s.eyebrow}>{flight.role === 'catcher' ? 'CAUGHT · OPENED FOR YOU' : 'DELIVERED · OPENED FOR YOU'}</Text><Text selectable style={s.letterBody}>{body}</Text></PostalCard>{flight.role === 'recipient' && flight.otherProfileId && <><Button label="Write a reply →" onPress={() => onReply(flight.otherProfileId!)} /><Text style={s.small}>No reply deadline. Your reply starts blank and takes a new timed flight.</Text></>}</> : <View style={s.card}><Envelope /><Text style={s.subtitle}>{flight.state === 'intercepted' ? 'This flight was intercepted.' : flight.state === 'delivered' ? 'Letter text is unavailable.' : 'Still on the wing.'}</Text><Text style={s.body}>{flight.state === 'intercepted' ? 'This letter did not reach its destination.' : flight.state === 'delivered' ? 'The server has not returned readable text for this account.' : 'Your recipient’s copy stays closed until the server confirms delivery. A finished countdown never opens it.'}</Text></View>}
     <View style={s.card}><Text style={s.eyebrow}>FLIGHT DETAILS</Text><Text style={s.body}>{flight.origin.name} → {flight.destination.name}</Text><Text style={s.small}>Departed {exactTime(flight.departedAt)}</Text><Text style={s.body}>Arrival {exactTime(flight.arrivesAt)}</Text><Text style={s.small}>{flight.distanceKm.toFixed(1)} km · Travel time {formatDuration((flight.arrivesAt - flight.departedAt) / 1000)}</Text>{flight.demo && <Text style={s.small}>Demo speed is accelerated. Normal travel at 60 km/h: {formatDuration(durationSeconds(flight.distanceKm, false, 'cruise'))}.</Text>}{flight.visibility === 'open' && <Notice>{OPEN_SKIES_DISCLOSURE}</Notice>}</View>
   </View>;
 }

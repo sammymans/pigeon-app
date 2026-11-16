@@ -19,7 +19,7 @@ export const summaryDto = v.object({
   attemptCount: v.number(),
 });
 export const detailDto = summaryDto.extend({
-  body: v.optional(v.string()), canCatch: v.boolean(), canRequest: v.boolean(), canResend: v.boolean(),
+  body: v.optional(v.string()), canCatch: v.boolean(), canSlingshot: v.optional(v.boolean()), canRequest: v.boolean(), canResend: v.boolean(),
   otherProfileId: v.optional(v.string()), events: v.array(event),
 });
 export const attemptDto = v.object({
