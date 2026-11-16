@@ -3,6 +3,7 @@ import { ConvexError, v } from 'convex/values';
 import { mutation, query } from './_generated/server';
 import { normalizeHandle, optionalProfile, profileProjection, requireProfile } from './model';
 import { cityId, profileDto } from './validators';
+import { completeOnboarding } from './onboarding';
 
 export const me = query({
   args: {}, returns: v.union(profileDto, v.null()),
@@ -26,6 +27,13 @@ export const save = mutation({
     if (existing) {
       await ctx.db.patch('profiles', existing._id, { handle, cityId: args.cityId });
       return profileProjection({ ...existing, handle, cityId: args.cityId });
+    }
+    if (user.phone) {
+      await completeOnboarding(ctx, { username: handle });
+      const created = await optionalProfile(ctx);
+      if (!created) throw new ConvexError('Could not create your profile.');
+      await ctx.db.patch('profiles', created._id, { cityId: args.cityId });
+      return profileProjection({ ...created, cityId: args.cityId });
     }
     const id = await ctx.db.insert('profiles', { userId, handle, cityId: args.cityId, equipped: 'classic', demo: false, namespace: 'live' });
     const created = await ctx.db.get('profiles', id);
