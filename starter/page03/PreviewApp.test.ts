@@ -6,8 +6,12 @@ import type { SkyMapData } from './mapData';
 import { isNearbyMock } from './nearbyPigeon';
 
 vi.mock('react-native', () => ({ Text: 'text', View: 'view', Modal: 'modal', Pressable: 'pressable', ScrollView: 'scroll', StyleSheet: { create: (value: unknown) => value } }));
+vi.mock('../LiveActivityTest', () => ({ LiveActivityTest: 'live-activity-test' }));
+vi.mock('../useFlightLiveActivity', () => ({ useFlightLiveActivity: () => '' }));
+vi.mock('../flightLiveActivity', () => ({ stopFlightActivity: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('./atoms', () => ({ a: {}, font: {}, palette: {}, Copy: 'copy', Handle: 'handle', Icon: 'icon', IconButton: 'icon-button', PrimaryButton: 'button', PageFrame: 'frame', PageHeader: 'header', usePageInsets: () => ({ top: 0, bottom: 0 }) }));
-vi.mock('./MapScreen', () => ({ MapScreen: 'map', MapSheet: 'map-sheet', HomeSheet: 'home', FlockSheet: 'flock', SentSheet: 'sent' }));
+vi.mock('./MapScreen', () => ({ MapScreen: 'map', MapSheet: 'map-sheet', HomeSheet: 'home', SentSheet: 'sent' }));
+vi.mock('../CoopScreen', () => ({ CoopScreen: 'flock' }));
 vi.mock('../CoopShop', () => ({ CoopShop: 'shop' }));
 vi.mock('./InterceptionGame', () => ({ InterceptionGame: 'game', Stone: 'stone' }));
 vi.mock('./PigeonMarker', () => ({ PigeonMarker: 'pigeon' }));
@@ -44,11 +48,44 @@ describe('new-user preview and seeded interception', () => {
     expect(mapData().markers.every(marker => isNearbyMock(marker.id))).toBe(true);
     expect(mapData().nearby?.radiusKm).toBe(5);
     await press(() => node('home').props.onExpand());
+    expect(renderer.root.findAllByType('map' as never)).toHaveLength(0);
     expect(node('flock').props.birds).toHaveLength(5);
     expect(node('flock').props.birds.every((bird: { status: string; deliveries: string }) => bird.status === 'Ready' && bird.deliveries === '0 deliveries')).toBe(true);
     await press(() => node('flock').props.onClose());
     await press(() => node('map').props.onInbox());
     expect(node('grid').props.people).toEqual([]);
+  });
+
+  it('returns from items and guard to the coop and sends with the chosen courier', async () => {
+    await render();
+    await press(() => node('home').props.onExpand());
+    await press(() => node('flock').props.onSelect('button'));
+    await press(() => node('flock').props.onShop({ owned: true, birdId: 'button' }));
+    expect(node('shop').props.initialOwned).toBe(true);
+    expect(node('shop').props.initialBird).toBe('button');
+    await press(() => node('shop').props.onBack());
+    expect(node('flock').props.selected).toBe('button');
+    await press(() => node('flock').props.onShop({ screen: 'guard' }));
+    expect(node('shop').props.initialScreen).toBe('guard');
+    await press(() => node('shop').props.onAction({ type: 'guard' }));
+    await press(() => node('shop').props.onBack());
+    expect(node('flock').props.guardUntil).toBeGreaterThan(node('flock').props.now);
+    await press(() => node('flock').props.onShop());
+    expect(node('shop').props.initialOwned).toBeUndefined();
+    await press(() => node('shop').props.onBack());
+    await press(() => node('flock').props.onSend('button'));
+    await press(() => node('recipients').props.onSelect('sammy'));
+    await press(() => node('recipients').props.onNext());
+    await press(() => node('composer').props.onChange('A hello from Button.'));
+    await press(() => node('composer').props.onNext());
+    expect(node('review').props.selected).toBe('button');
+    await press(() => node('review').props.onSend());
+    expect(node('sent').props.pigeon).toBe('Button');
+    await press(() => node('sent').props.onHome());
+    expect(node('home').props.birds.find((bird: { id: string }) => bird.id === 'button').status).toBe('Flying');
+    expect(node('home').props.birds.filter((bird: { status: string }) => bird.status === 'Ready')).toHaveLength(4);
+    await press(() => node('home').props.onExpand());
+    expect(node('flock').props.birds.find((bird: { id: string }) => bird.id === 'button').status).toBe('Flying');
   });
 
   it('moves all nearby birds together, catches each independently, and keeps caught mail on a nearby reset', async () => {

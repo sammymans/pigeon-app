@@ -4,7 +4,7 @@ The current click-through app and `EXPO_PUBLIC_DESIGN_PREVIEW=true` entry both u
 
 ## Try it
 
-1. The opening map shows **Scout, Fern, and Sunny** passing through a **5 km** area on three unevenly spaced regional routes. The departure and destination points lie outside the local circle. The map uses the device location, with New York as its fallback. No unrelated worldwide flights or mailbox history are preloaded; the five welcome pigeons are ready to send.
+1. The opening map shows **Scout, Fern, and Sunny** passing through a **5 km** area on three unevenly spaced routes. Departure and destination points slide along the original bearings to reach land, shortening routes where a coast is close. A bundled coastline check keeps endpoints inland and preserves the pigeons' nearby positions and interception time. At offshore locations, routes may extend farther; a route with no land endpoint in either search direction is omitted. The map uses the device location, with New York as its fallback. No unrelated worldwide flights or mailbox history are preloaded; the five welcome pigeons are ready to send.
 2. Tap a pigeon, then **Intercept**.
 3. Drag the blue stone down and sideways. Pulling left sends it right; pulling farther down adds power. The dotted arc previews the trajectory. Release to fire, aiming ahead of the moving pigeon.
 4. You get two shots at each pigeon while time remains. One hit wins; two misses end the attempt and leave your other pouch stones untouched. A shot costs one stone from the same pouch used by the coop shop; tapping, cancelling a drag, and entering or leaving the game cost nothing.

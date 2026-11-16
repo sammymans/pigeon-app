@@ -9,6 +9,8 @@ import { Pigeon } from './Pigeon';
 import { shopArtwork, type ShopArt } from './shopArtwork';
 import { a, Copy, font, Icon, IconButton, PageFrame, palette, PrimaryButton, usePageInsets } from './page03/atoms';
 
+export type CoopShopEntry = { screen?: 'catalog' | 'stones' | 'pigeon' | 'guard'; owned?: boolean; birdId?: string };
+
 type Route = { screen: 'catalog' } | { screen: 'accessory'; item: Accessory } | { screen: 'treats' | 'guard' | 'stones' | 'points' | 'pigeon' };
 type Props = {
   state: ShopState; birds: ShopBird[]; onBack: () => void;
@@ -17,7 +19,7 @@ type Props = {
   onCheckout?: (sku: StoreSku) => Promise<void>;
   storefront?: { testMode: boolean; products: StoreProduct[] };
   orders?: Order[]; returnedOrder?: Order | null;
-  connected?: boolean; initialOwned?: boolean; initialScreen?: 'catalog' | 'stones' | 'pigeon';
+  connected?: boolean; initialOwned?: boolean; initialScreen?: CoopShopEntry['screen']; initialBird?: string;
   onPreviewPigeon?: () => void;
 };
 
@@ -40,11 +42,11 @@ export function BirdPicker({ birds, selected, onSelect, state, wearing, label = 
   </ScrollView></View>;
 }
 
-export function CoopShop({ state: input, birds: allBirds, onBack, onAction, onPreviewTopUp, onPreviewPigeon, onCheckout, storefront, orders, returnedOrder, connected = true, initialOwned = false, initialScreen = 'catalog' }: Props) {
+export function CoopShop({ state: input, birds: allBirds, onBack, onAction, onPreviewTopUp, onPreviewPigeon, onCheckout, storefront, orders, returnedOrder, connected = true, initialOwned = false, initialScreen = 'catalog', initialBird }: Props) {
   const [route, setRoute] = useState<Route>({ screen: initialScreen });
   const [pointsReturn, setPointsReturn] = useState<Route>({ screen: 'catalog' });
   const [ownedOnly, setOwnedOnly] = useState(initialOwned);
-  const [selected, setSelected] = useState(allBirds.find(bird => !bird.egg)?.id ?? '');
+  const [selected, setSelected] = useState(initialBird ?? allBirds.find(bird => !bird.egg)?.id ?? '');
   const [pack, setPack] = useState(1);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');

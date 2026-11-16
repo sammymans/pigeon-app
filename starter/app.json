@@ -5,14 +5,47 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "scheme": "pigeon",
+    "ios": {
+      "bundleIdentifier": "com.sammymans.pigeon.dev",
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
     "plugins": [
       "expo-font",
+      "expo-secure-store",
+      "expo-widgets",
       [
         "expo-location",
         {
           "locationWhenInUsePermission": "Allow Pigeon to center the map near your current location."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "ExpoWidgetsTarget",
+                  "bundleIdentifier": "com.sammymans.pigeon.dev.ExpoWidgetsTarget",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.com.sammymans.pigeon.dev"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "projectId": "9ad01b46-7320-40b0-8a46-68d83d7489f7"
+      }
+    },
+    "owner": "sammymans"
   }
 }

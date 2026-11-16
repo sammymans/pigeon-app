@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
 import { cities, type CityId } from '../src/domain';
+import { inputStyles } from './inputStyles';
 
 export const colors = { paper: '#FFFFFF', card: '#FFFFFF', ink: '#17212B', muted: '#566273', blue: '#2453FF', line: '#E3E8EF', pale: '#EDF2FF', orange: '#9B5320', red: '#AE3046', water: '#EAF1F7', land: '#DCE5ED' };
 
@@ -77,7 +78,7 @@ export const s = StyleSheet.create({
   linkText: { color: colors.blue, fontSize: 14, lineHeight: 20, fontWeight: '600' },
   field: { gap: 8 },
   fieldLabel: { fontSize: 13, fontWeight: '600', color: colors.ink },
-  input: { minHeight: 52, backgroundColor: '#F3F5F8', paddingHorizontal: 16, paddingVertical: 14, borderColor: colors.line, borderWidth: 1, borderRadius: 16, color: colors.ink, fontSize: 16, lineHeight: 24 },
+  input: { ...inputStyles.singleLine, minHeight: 52, backgroundColor: '#F3F5F8', paddingHorizontal: 16, borderColor: colors.line, borderWidth: 1, borderRadius: 16, color: colors.ink, fontSize: 16 },
   letterInput: { minHeight: 154, textAlignVertical: 'top', fontSize: 23, lineHeight: 32, color: colors.ink, padding: 0, paddingTop: 4 },
   notice: { padding: 16, borderRadius: 16, backgroundColor: colors.pale },
   errorBox: { backgroundColor: '#FFF0F2' },

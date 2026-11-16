@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { IconButton, PrimaryButton, font, palette } from './page03/atoms';
 import { Pigeon } from './Pigeon';
+import { inputStyles } from './inputStyles';
 import { formatPhoneNumber, phoneNumber, resendSeconds, smsCode, usernameValue, validUsername } from './onboardingModel';
 
 type SendCode = (phone: string) => Promise<{ retryAt: number }>;
@@ -124,9 +125,9 @@ export function ProfileOnboarding({ availability, checkUsername, complete, onBac
   }
   return <OnboardingFrame step={3} back={busy ? undefined : onBack} footer={<PrimaryButton label={busy ? 'Making your flock…' : 'Meet my pigeons'} disabled={busy || !valid || taken} onPress={() => void submit()} />}>
     {(compact, tight) => <><Text accessibilityRole="header" style={[o.title, compact && o.compactTitle, tight && { display: 'none' }]}>What should{'\n'}we call you?</Text>
-    <View style={[o.profileFields, compact && { marginTop: tight ? 8 : 12 }]}><Text style={[o.label, tight && { marginBottom: 6 }]}>Username</Text><View style={[o.phoneField, tight && { minHeight: 50 }, { borderColor: usernameError ? '#A33246' : palette.blue, borderWidth: 2 }]}><Text style={o.body}>@</Text><TextInput accessibilityLabel="Username" value={username} onChangeText={value => { setUsername(value); setError(''); }} placeholder="your.username" autoCapitalize="none" autoCorrect={false} autoComplete="username-new" editable={!busy} maxLength={25} style={[o.inputText, { flex: 1, minWidth: 0 }]} /></View>
+    <View style={[o.profileFields, compact && { marginTop: tight ? 8 : 12 }]}><Text style={[o.label, tight && { marginBottom: 6 }]}>Username</Text><View style={[o.phoneField, tight && { minHeight: 50 }, { borderColor: usernameError ? '#A33246' : palette.blue, borderWidth: 2 }]}><Text style={o.inputPrefix}>@</Text><TextInput accessibilityLabel="Username" value={username} onChangeText={value => { setUsername(value); setError(''); }} placeholder="your.username" autoCapitalize="none" autoCorrect={false} autoComplete="username-new" editable={!busy} maxLength={25} style={[o.inputText, { flex: 1, minWidth: 0 }]} /></View>
       {usernameError ? <ErrorMessage>{usernameError}</ErrorMessage> : <Text style={[o.small, { marginTop: 10 }]}>{usernameGuidance}</Text>}
-      <Text style={[o.label, { marginTop: tight ? 8 : compact ? 12 : 36 }, tight && { marginBottom: 6 }]}>Name <Text style={o.small}>(optional)</Text></Text><TextInput accessibilityLabel="Name (optional)" value={name} onChangeText={setName} placeholder="Your name" autoComplete="name" editable={!busy} maxLength={50} style={[o.phoneField, o.inputText, tight && { minHeight: 50 }]} />
+      <Text style={[o.label, { marginTop: tight ? 8 : compact ? 12 : 36 }, tight && { marginBottom: 6 }]}>Name <Text style={o.small}>(optional)</Text></Text><View style={[o.phoneField, tight && { minHeight: 50 }]}><TextInput accessibilityLabel="Name (optional)" value={name} onChangeText={setName} placeholder="Your name" autoComplete="name" editable={!busy} maxLength={50} style={[o.inputText, { flex: 1, minWidth: 0 }]} /></View>
     </View><ErrorMessage>{error}</ErrorMessage>
     </>}
   </OnboardingFrame>;
@@ -151,7 +152,8 @@ const o = StyleSheet.create({
   body: { fontFamily: 'Inter_400Regular', fontSize: 15, lineHeight: 23, color: palette.secondary },
   small: { fontFamily: 'Inter_400Regular', fontSize: 12, lineHeight: 20, color: palette.secondary },
   label: { fontFamily: 'Inter_600SemiBold', fontSize: 14, lineHeight: 20, color: palette.ink, marginBottom: 10 },
-  inputText: { fontFamily: 'Inter_400Regular', fontSize: 18, color: palette.ink, paddingVertical: 0, outlineWidth: 0 },
+  inputText: { ...inputStyles.singleLine, minHeight: 44, fontFamily: 'Inter_400Regular', fontSize: 18, color: palette.ink, outlineWidth: 0 },
+  inputPrefix: { fontFamily: 'Inter_400Regular', fontSize: 18, color: palette.secondary, includeFontPadding: false },
   phoneField: { flexDirection: 'row', alignItems: 'center', minHeight: 58, borderRadius: 16, borderWidth: 1, borderColor: '#CBD5E1', paddingHorizontal: 16, gap: 10 },
   separator: { height: 24, width: 1, backgroundColor: palette.line, marginRight: 4 },
   welcomeArt: { height: 214, flexShrink: 1, minHeight: 0, overflow: 'hidden', marginTop: 24, marginBottom: 20, alignItems: 'center', justifyContent: 'center' },
@@ -166,7 +168,7 @@ const o = StyleSheet.create({
   codeArea: { height: 62, marginTop: 40, marginBottom: 16 },
   codeBoxes: { flexDirection: 'row', gap: 6, height: 62 },
   codeBox: { flex: 1, borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  digit: { fontFamily: 'Inter_400Regular', fontSize: 27, color: palette.ink },
+  digit: { fontFamily: 'Inter_400Regular', fontSize: 27, color: palette.ink, includeFontPadding: false, textAlign: 'center' },
   codeInput: { position: 'absolute', inset: 0, color: 'transparent', backgroundColor: 'transparent', outlineWidth: 0, outlineStyle: 'solid', outlineColor: 'transparent', fontSize: 24 },
   textButton: { minHeight: 44, justifyContent: 'center' },
   profileFields: { marginTop: 40 },

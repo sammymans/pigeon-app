@@ -61,7 +61,7 @@ export function SkyMap({ data, onSelect, onLocationChange, topInset, bottomInset
   const center = data.nearby ? projected(data.nearby.center) : null;
   return <View style={[StyleSheet.absoluteFill, { backgroundColor: palette.water }]}><View style={{ position: 'absolute', top: topInset, bottom: bottomInset, left: 0, right: 0, overflow: 'hidden' }} onLayout={event => setSize(event.nativeEvent.layout)}><Svg width="100%" height="100%" viewBox={`${left} ${top} ${width} ${height}`} preserveAspectRatio="none">
     <G fill={palette.land}>{worldLand.map((d, index) => <Path key={index} d={d} />)}</G>
-    {data.routes.map(route => <Path key={route.id} d={path(route.coordinates)} stroke="#7D99FF" strokeWidth={unit * 1.5} strokeDasharray={`${unit * 2} ${unit * 2}`} strokeLinecap="butt" fill="none" />)}
+    {data.routes.map(route => <Path key={route.id} d={path(route.coordinates)} stroke="#7D99FF" strokeWidth={unit} strokeDasharray={`${unit * 3} ${unit * 2}`} strokeLinecap="butt" fill="none" />)}
     {data.routes.flatMap(route => [route.origin, route.destination].map((city, i) => { const p = projected({ latitude: city.lat, longitude: city.lng }); return <Circle key={`${route.id}:${i}`} cx={p.x} cy={p.y} r={unit * 3} fill={palette.blue} stroke="white" strokeWidth={unit * 1.5} />; }))}
     {center && <Circle cx={center.x} cy={center.y} r={unit * 7} fill={data.nearby?.locationKnown ? palette.blue : '#8597B3'} stroke="white" strokeWidth={unit * 3} />}
   </Svg>

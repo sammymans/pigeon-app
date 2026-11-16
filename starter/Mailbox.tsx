@@ -8,7 +8,8 @@ import { acceptedFriends, exactTime, readableBody } from './letterModel';
 import { useDraft } from './useDraft';
 import { useOpenedLetters } from './useOpenedLetters';
 import { mailboxesFromFlights, type MailLetter, type PersonMailbox } from './mailboxModel';
-import { CoopShop } from './CoopShop';
+import { CoopShop, type CoopShopEntry } from './CoopShop';
+import { CoopScreen } from './CoopScreen';
 import { useCoop } from './useCoop';
 import { useCommerce } from './useCommerce';
 import { wornBy } from '../src/shop';
@@ -17,9 +18,10 @@ import { FriendInvites } from './MailSetup';
 import { visibleFlights } from './presentation';
 import { Button, Loading, Notice, colors, s } from './ui';
 import { a } from './page03/atoms';
-import { FlockSheet, HomeSheet, MapScreen, MapSheet, SentSheet, type FlockBird } from './page03/MapScreen';
+import { HomeSheet, MapScreen, MapSheet, SentSheet, type FlockBird } from './page03/MapScreen';
 import { LetterThread, MailboxGrid, ReadingSheet } from './page03/Messaging';
 import { skyMapData } from './page03/mapData';
+import { useFlightLiveActivity } from './useFlightLiveActivity';
 
 export function Mailbox({ profile, deployment, connected, initialCompose = false, onCatch, onReturn, onNavigate, onMenu }: { profile: Profile; deployment: string; connected: boolean; initialCompose?: boolean; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void; onNavigate: () => void; onMenu?: () => void }) {
   const connections = useQuery(api.social.list, {});
@@ -39,6 +41,8 @@ export function Mailbox({ profile, deployment, connected, initialCompose = false
   const coop = useCoop();
   const commerce = useCommerce();
   const [shopOpen, setShopOpen] = useState(false);
+  const [shopEntry, setShopEntry] = useState<CoopShopEntry>({});
+  function openShop(entry: CoopShopEntry = {}) { setShopEntry(entry); setShopOpen(true); }
   useEffect(() => { if (commerce.returnId) setShopOpen(true); }, [commerce.returnId]);
   const launch = useMutation(api.flights.launch);
   const clock = useServerClock(connected);
@@ -63,6 +67,7 @@ export function Mailbox({ profile, deployment, connected, initialCompose = false
   const openPerson = people.find(item => item.letters.some(letter => letter.id === openId));
   const openLetter = openPerson?.letters.find(letter => letter.id === openId);
   const sentFlight = flights?.flights.find(flight => flight.id === sentId);
+  const activityError = useFlightLiveActivity(`${deployment}:${profile.id}`, flights?.flights, 'connected', sentId);
   const unopened = people.reduce((count, item) => count + item.unopened, 0);
   const birds: FlockBird[] = (account?.pigeons ?? []).map((bird, i) => {
     const flying = Boolean(bird.activeFlightId);
@@ -76,7 +81,6 @@ export function Mailbox({ profile, deployment, connected, initialCompose = false
   }, [account, draft.draft, draft.locked, draft.busy]);
   const outgoing = flights?.flights.filter(flight => flight.role === 'sender' && flight.state === 'in_flight').length ?? 0;
   const incoming = flights?.flights.filter(flight => flight.role === 'recipient' && flight.state === 'in_flight').length ?? 0;
-  const ready = birds.filter(bird => bird.status === 'Ready').length;
   function compose(recipientId?: string) {
     if (!draft.locked && !draft.draft?.body && recipientId) draft.edit({ recipientId });
     setReplyTarget(null); setReplying(false); setComposing(true); onNavigate();
@@ -91,20 +95,22 @@ export function Mailbox({ profile, deployment, connected, initialCompose = false
     if (id) { setReplyTarget(null); setComposing(false); setOpenId(null); setSentId(id); setSelected(id); setScope('mine'); setScreen('home'); }
   }
   const notices = <>
+    {activityError && <Notice>{activityError}</Notice>}
     {flockError && <><Notice error>{flockError}</Notice><Button label="Retry loading your flock" secondary onPress={() => setFlockAttempt(value => value + 1)} /></>}
     {!profile.demo && <FriendInvites connected={connected} />}
     {(!connected || clock.syncError) && <Notice>Reconnecting. Letters open and send after the server confirms their status.</Notice>}
     {profile.demo && pair && !pair.partner && <Invitation token={pair.inviteToken} expiresAt={pair.expiresAt} serverNow={clock.serverNow} />}
   </>;
-  const shopView = coop.state ? <CoopShop initialScreen={composing ? 'pigeon' : 'catalog'} state={coop.state} birds={birds} connected={connected} onBack={() => setShopOpen(false)} onAction={coop.act} storefront={commerce.storefront} orders={commerce.orders} returnedOrder={commerce.returnedOrder} onCheckout={commerce.buy} /> : null;
+  const shopView = coop.state ? <CoopShop initialScreen={composing ? 'pigeon' : shopEntry.screen} initialOwned={shopEntry.owned} initialBird={shopEntry.birdId} state={coop.state} birds={birds} connected={connected} onBack={() => setShopOpen(false)} onAction={coop.act} storefront={commerce.storefront} orders={commerce.orders} returnedOrder={commerce.returnedOrder} onCheckout={commerce.buy} /> : null;
   if (shopOpen && !composing && shopView) return shopView;
   let content;
-  if (screen === 'thread' && person) content = <LetterThread person={person} now={clock.serverNow} onBack={() => setScreen('mailbox')} onCompose={person.recipientId ? () => compose(person.recipientId) : undefined} onOpen={letter => { if (letter.caught && onReturn) onReturn(letter.id); else setOpenId(letter.id); }} />;
+  if (flock) content = <CoopScreen birds={birds} selected={selectedBird} guardUntil={coop.state?.guardUntil} now={clock.serverNow} onSelect={setSelectedBird} onShop={coop.state ? openShop : undefined} onClose={() => setFlock(false)} unavailable={flockError || (account === undefined ? 'Finding your flock…' : undefined)} onSend={id => { if (!draft.locked && !draft.busy) draft.edit({ pigeonId: id }); setFlock(false); compose(); }} />;
+  else if (screen === 'thread' && person) content = <LetterThread person={person} now={clock.serverNow} onBack={() => setScreen('mailbox')} onCompose={person.recipientId ? () => compose(person.recipientId) : undefined} onOpen={letter => { if (letter.caught && onReturn) onReturn(letter.id); else setOpenId(letter.id); }} />;
   else if (screen !== 'home') content = <MailboxGrid people={people} now={clock.serverNow} loading={flights === undefined || connections === undefined || !read.loaded} notice={notices} onBack={() => setScreen('home')} onCompose={() => compose()} onPerson={item => { setPersonId(item.id); setScreen('thread'); }} />;
-  else content = <MapScreen map={skyMapData(mapFlights, selected, clock.serverNow)} unopened={unopened} scope={scope} onScope={value => { setScope(value); setSelected(null); setFlock(false); setSentId(null); }} onMenu={onMenu} onShop={coop.state ? () => setShopOpen(true) : undefined} onInbox={() => { setScreen('mailbox'); setSentId(null); }} onSelect={id => { setSelected(id); if (scope === 'mine') { const owner = people.find(item => item.letters.some(letter => letter.id === id)); if (owner) { setPersonId(owner.id); setScreen('thread'); } } }} sheetHeight={flock ? 450 : sentId ? 250 : 214}>
-    {sentId ? <SentSheet pigeon={sentFlight?.courier ?? 'Your pigeon'} to={`To ${sentFlight?.recipientHandle ?? 'your pen pal'}`} estimate="On its way" explanation="Your letter is in the sky. Follow its journey on the map." onHome={() => setSentId(null)} /> : flock ? <FlockSheet birds={birds} selected={selectedBird ?? birds.find(bird => bird.status === 'Ready')?.id ?? birds[0]?.id ?? null} summary={`${ready} ready · ${birds.length} pigeons`} onSelect={setSelectedBird} onShop={coop.state ? () => setShopOpen(true) : undefined} onClose={() => setFlock(false)} onSend={() => { const id = selectedBird ?? birds.find(bird => bird.status === 'Ready')?.id; if (id) draft.edit({ pigeonId: id }); setFlock(false); compose(); }} /> : scope === 'world' ? <MapSheet contentStyle={{ gap: 12 }}><WorldSelection id={selected ?? mapFlights[0]?.id ?? null} connected={connected} onCatch={onCatch} /></MapSheet> : <HomeSheet title={flights === undefined ? 'Finding your flights…' : outgoing + incoming ? `${outgoing + incoming} ${outgoing + incoming === 1 ? 'flight' : 'flights'} in your sky` : 'Your sky is quiet'} subtitle={`${outgoing} sent · ${incoming} on its way to you`} ready={`${ready} ready`} coopCount={birds.length} onExpand={() => setFlock(true)} action={draft.locked ? 'Resolve saved send' : draft.draft?.body ? 'Continue your letter' : 'Send a pigeon'} onSend={() => compose()} disabled={connections === undefined} notice={flockError ? <Button label="Retry loading your flock" secondary onPress={() => setFlockAttempt(value => value + 1)} /> : !connected ? <Text style={a.small}>Reconnecting to your sky…</Text> : undefined} />}
+  else content = <MapScreen map={skyMapData(mapFlights, selected, clock.serverNow)} unopened={unopened} scope={scope} onScope={value => { setScope(value); setSelected(null); setFlock(false); setSentId(null); }} onMenu={onMenu} onShop={coop.state ? () => openShop() : undefined} onInbox={() => { setScreen('mailbox'); setSentId(null); }} onSelect={id => { setSelected(id); if (scope === 'mine') { const owner = people.find(item => item.letters.some(letter => letter.id === id)); if (owner) { setPersonId(owner.id); setScreen('thread'); } } }} sheetHeight={sentId ? 250 : 214}>
+    {sentId ? <SentSheet pigeon={sentFlight?.courier ?? 'Your pigeon'} to={`To ${sentFlight?.recipientHandle ?? 'your pen pal'}`} estimate="On its way" explanation="Your letter is in the sky. Follow its journey on the map." onHome={() => setSentId(null)} /> : scope === 'world' ? <MapSheet contentStyle={{ gap: 12 }}><WorldSelection id={selected ?? mapFlights[0]?.id ?? null} connected={connected} onCatch={onCatch} /></MapSheet> : <HomeSheet title={flights === undefined ? 'Finding your flights…' : outgoing + incoming ? `${outgoing + incoming} ${outgoing + incoming === 1 ? 'flight' : 'flights'} in your sky` : 'Your sky is quiet'} subtitle={`${outgoing} sent · ${incoming} on its way to you`} birds={birds} onExpand={() => setFlock(true)} action={draft.locked ? 'Resolve saved send' : draft.draft?.body ? 'Continue your letter' : 'Send a pigeon'} onSend={() => compose()} disabled={connections === undefined} notice={flockError ? <Button label="Retry loading your flock" secondary onPress={() => setFlockAttempt(value => value + 1)} /> : !connected ? <Text style={a.small}>Reconnecting to your sky…</Text> : undefined} />}
   </MapScreen>;
-  return <>{content}{openLetter && openPerson && !composing && <ConnectedReader letter={openLetter} person={openPerson} now={clock.serverNow} markOpened={read.markOpened} onClose={() => setOpenId(null)} onReply={reply} />}{composing && <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }}><ConnectedComposer profile={profile} friends={friends} birds={birds} controller={draft} connected={connected} replying={replying} replyTarget={replyTarget} onClose={() => setComposing(false)} onKeep={() => { setReplyTarget(null); setReplying(false); }} onReplace={() => { if (replyTarget) draft.startReply(replyTarget); setReplyTarget(null); }} onSend={() => void send()} onShop={coop.state ? () => setShopOpen(true) : undefined} /></View>}{shopOpen && composing && shopView && <Modal visible animationType="slide" onRequestClose={() => setShopOpen(false)}>{shopView}</Modal>}</>;
+  return <>{content}{openLetter && openPerson && !composing && <ConnectedReader letter={openLetter} person={openPerson} now={clock.serverNow} markOpened={read.markOpened} onClose={() => setOpenId(null)} onReply={reply} />}{composing && <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }}><ConnectedComposer profile={profile} friends={friends} birds={birds} controller={draft} connected={connected} replying={replying} replyTarget={replyTarget} onClose={() => setComposing(false)} onKeep={() => { setReplyTarget(null); setReplying(false); }} onReplace={() => { if (replyTarget) draft.startReply(replyTarget); setReplyTarget(null); }} onSend={() => void send()} onShop={coop.state ? () => openShop() : undefined} /></View>}{shopOpen && composing && shopView && <Modal visible animationType="slide" onRequestClose={() => setShopOpen(false)}>{shopView}</Modal>}</>;
 }
 
 function ConnectedReader({ letter, person, now, markOpened, onClose, onReply }: { letter: MailLetter; person: PersonMailbox; now: number | null; markOpened: (id: string) => void; onClose: () => void; onReply: (recipientId: string) => void }) {

@@ -27,6 +27,19 @@ beforeEach(() => { vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true); send.mockCle
 afterEach(async () => { if (renderer) await act(async () => renderer.unmount()); vi.unstubAllGlobals(); });
 
 describe('mailbox navigation and replies', () => {
+  it('keeps the anonymous signature when moving between writing and pigeon selection', async () => {
+    await render(); await act(async () => node('grid').props.onCompose());
+    await act(async () => node('recipients').props.onSelect('sammy'));
+    await act(async () => node('recipients').props.onNext());
+    await act(async () => node('composer').props.onChange('A little anonymous hello.'));
+    await act(async () => node('composer').props.onHideName(true));
+    expect(node('composer').props.signature).toBe('Someone');
+    await act(async () => node('composer').props.onNext());
+    expect(node('review').props.sender).toMatch(/^Someone · /);
+    await act(async () => node('review').props.onBack());
+    expect(node('composer').props.hideName).toBe(true);
+    expect(node('composer').props.body).toBe('A little anonymous hello.');
+  });
   it('opens one letter and returns to the same thread with the unread badge cleared', async () => {
     await render(); await open('Sammy');
     expect(node('reader').props.body).toContain('croissant');

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { cityById, distanceKm } from '../../src/domain';
 import { canIntercept } from '../../src/interception';
+import { isLandCoordinate } from '../../src/ui/landGeometry';
 import { flightCoordinate, skyMapData, type Coordinate } from './mapData';
 import { focusNearby, isNearbyMock, nearbyPigeons, NEARBY_RADIUS_KM, offsetCoordinate, PREVIEW_CENTER, validCoordinate } from './nearbyPigeon';
 
@@ -13,12 +14,14 @@ describe('nearby passing pigeons', () => {
     ['Tokyo', { latitude: 35.6762, longitude: 139.6503 }],
     ['high latitude', { latitude: 85, longitude: 30 }],
     ['date line', { latitude: 5, longitude: 179.999 }],
-  ])('puts the pigeon near %s on a longer route', (_, center) => {
+  ])('keeps the pigeon near %s with both endpoints on land', (_, center) => {
     const flights = nearbyPigeons(center, 1000);
+    expect(flights.length).toBeGreaterThan(0);
+    expect(flights.length).toBeLessThanOrEqual(3);
     for (const flight of flights) {
-      expect(flight.distanceKm).toBeGreaterThan(40);
-      expect(kmBetween(center, { latitude: flight.origin.lat, longitude: flight.origin.lng })).toBeGreaterThan(5);
-      expect(kmBetween(center, { latitude: flight.destination.lat, longitude: flight.destination.lng })).toBeGreaterThan(5);
+      expect(flight.distanceKm).toBeGreaterThan(2);
+      expect(isLandCoordinate({ latitude: flight.origin.lat, longitude: flight.origin.lng })).toBe(true);
+      expect(isLandCoordinate({ latitude: flight.destination.lat, longitude: flight.destination.lng })).toBe(true);
       for (let index = 0; index <= 64; index++) {
         expect(validCoordinate(flightCoordinate(flight.origin, flight.destination, index / 64))).toBe(true);
       }
@@ -30,6 +33,37 @@ describe('nearby passing pigeons', () => {
       for (const other of data.markers.filter(other => other.id !== marker.id)) expect(kmBetween(marker.coordinate, other.coordinate)).toBeGreaterThan(2);
     }
     expect(data.focusCoordinates.every(point => Math.abs(kmBetween(center, point) - 5) < 0.001)).toBe(true);
+  });
+
+  it.each([
+    ['New York', PREVIEW_CENTER],
+    ['San Francisco', { latitude: 37.7749, longitude: -122.4194 }],
+    ['Los Angeles', { latitude: 34.0522, longitude: -118.2437 }],
+    ['Sydney', { latitude: -33.8688, longitude: 151.2093 }],
+  ])('preserves route angles, passing positions and interception time around %s after refreshes', (_, center) => {
+    const headings = [62, 148, 256], bearings = [292, 24, 157], distances = [1.4, 3.2, 2.7];
+    const bearingTo = (a: Coordinate, b: Coordinate) => {
+      const radians = Math.PI / 180, delta = (b.longitude - a.longitude) * radians;
+      return (Math.atan2(Math.sin(delta) * Math.cos(b.latitude * radians),
+        Math.cos(a.latitude * radians) * Math.sin(b.latitude * radians)
+        - Math.sin(a.latitude * radians) * Math.cos(b.latitude * radians) * Math.cos(delta)) / radians + 360) % 360;
+    };
+    for (const serial of [0, 1, 6, 18, 32]) {
+      const flights = nearbyPigeons(center, 1000, serial);
+      expect(flights).toHaveLength(3);
+      flights.forEach((flight, index) => {
+        const passage = offsetCoordinate(center, distances[index], bearings[index] + serial * 11);
+        const origin = { latitude: flight.origin.lat, longitude: flight.origin.lng };
+        const destination = { latitude: flight.destination.lat, longitude: flight.destination.lng };
+        expect(isLandCoordinate(origin)).toBe(true);
+        expect(isLandCoordinate(destination)).toBe(true);
+        expect(bearingTo(passage, origin)).toBeCloseTo((headings[index] + 180) % 360, 5);
+        expect(bearingTo(passage, destination)).toBeCloseTo(headings[index], 5);
+        const progress = (1000 - flight.departedAt) / (flight.arrivesAt - flight.departedAt);
+        expect(kmBetween(passage, flightCoordinate(flight.origin, flight.destination, progress))).toBeLessThan(0.001);
+        expect(flight.arrivesAt - 1000).toBeGreaterThanOrEqual(23 * 60_000 - 1);
+      });
+    }
   });
 
   it('is interceptable, with a new identity for each reset', () => {

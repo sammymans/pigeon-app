@@ -25,6 +25,8 @@ vi.mock('convex/react', () => ({
   },
 }));
 vi.mock('react-native', () => ({ View: 'view', Text: 'text' }));
+vi.mock('./LiveActivityTest', () => ({ LiveActivityTest: 'live-activity-test' }));
+vi.mock('./flightLiveActivity', () => ({ stopFlightActivity: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('./ui', () => ({ CityPicker: 'city-picker', Button: 'button', Link: 'link', Loading: 'loading', Notice: 'notice', s: {} }));
 vi.mock('./page03/atoms', () => ({ PageFrame: 'frame', usePageInsets: () => ({ top: 0, bottom: 0 }) }));
 vi.mock('./Onboarding', () => ({ FlockReady: 'ready', PhoneOnboarding: 'phone', ProfileOnboarding: 'profile' }));

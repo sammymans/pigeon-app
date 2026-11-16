@@ -113,7 +113,7 @@ export function SkyMap(props: SkyMapProps) {
       accessibilityLabel="Flight map. Drag to explore and pinch to zoom."
     >
       {(data.nearby || userLocation) && <Marker coordinate={data.nearby?.center ?? userLocation!} title={data.nearby && !data.nearby.locationKnown ? 'New York' : 'Your location'} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false} zIndex={20}><View style={[styles.userLocation, data.nearby && !data.nearby.locationKnown && { backgroundColor: '#8597B3' }]} /></Marker>}
-      {data.routes.map(route => <Polyline key={route.id} coordinates={route.coordinates} geodesic strokeColor="#7D99FF" strokeWidth={1.5} lineDashPattern={[2, 2]} lineCap="butt" />)}
+      {data.routes.map(route => <Polyline key={route.id} coordinates={route.coordinates} geodesic strokeColor="#7D99FF" strokeWidth={1} lineDashPattern={[3, 2]} lineCap="butt" />)}
       {data.routes.flatMap(route => [route.origin, route.destination].map((city, index) => <Marker key={`${route.id}:${index}`} coordinate={{ latitude: city.lat, longitude: city.lng }} title={city.name} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false}><View style={styles.endpoint} /></Marker>))}
       {data.markers.map(marker => <Marker key={`${marker.id}:${marker.selected}:${marker.accessory}`} coordinate={marker.coordinate} anchor={{ x: 0.5, y: 0.5 }} tracksViewChanges={false} zIndex={marker.selected ? 10 : 5} accessibilityLabel={marker.label} onPress={() => onSelect?.(marker.id)}><View style={[styles.marker, marker.selected && styles.selected]}><PigeonMarker name={marker.courier} accessory={marker.accessory} facingLeft={marker.facingLeft} size={marker.selected ? 68 : 60} /></View></Marker>)}
     </MapView>

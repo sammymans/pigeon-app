@@ -29,7 +29,7 @@ export type IconName = 'close' | 'back' | 'arrow' | 'plus' | 'mail' | 'more' | '
 export function Icon({ name, size = 22, color = palette.ink }: { name: IconName; size?: number; color?: string }) {
   // Original Paper artwork: Outfits → Wooden coop, node 7O5-0 (360 × 160).
   // Nested SVG viewports are flattened to equivalent groups for native rendering.
-  if (name === 'coop') return <SvgXml aria-hidden xml={coopArtwork} width={size} height={size * 160 / 360} />;
+  if (name === 'coop') return <SvgXml aria-hidden xml={coopArtwork.back.replace('</svg>', coopArtwork.front.replace(/^<svg[^>]*>/, ''))} width={size} height={size * 160 / 360} />;
   const paths: Partial<Record<IconName, string>> = { compose: 'M13 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M15 3l3-3 4 4-3 3M9 10l6-7 4 4-7 6-4 1Z', down: 'm7 10 5 5 5-5', close: 'm6 6 12 12M18 6 6 18', back: 'm14 6-6 6 6 6', arrow: 'M5 12h14m-5-5 5 5-5 5', plus: 'M12 5v14M5 12h14', check: 'm5 12 4 4 10-10', search: 'm16 16 4 4', nearby: 'M12 2v3m0 14v3M2 12h3m14 0h3', lock: 'M8 10V7a4 4 0 0 1 8 0v3' };
   return <Svg aria-hidden width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
     {paths[name] && <Path d={paths[name]} />}
