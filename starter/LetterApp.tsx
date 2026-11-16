@@ -1,166 +1,68 @@
 import { useAuthActions } from '@convex-dev/auth/react';
-import { useConvexAuth, useConvexConnectionState, useMutation, useQuery } from 'convex/react';
-import { ConvexError } from 'convex/values';
-import { Component, useRef, useState, type ComponentRef, type ReactNode } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAction, useConvexAuth, useConvexConnectionState, useMutation, useQuery } from 'convex/react';
+import { Component, useState, type ReactNode } from 'react';
+import { Text, View } from 'react-native';
 import { api } from '../convex/_generated/api';
-import type { CityId } from '../src/domain';
 import { Mailbox } from './Mailbox';
-import { Button, CityPicker, Field, Link, Loading, Notice, Wordmark, s } from './ui';
-import { PaperPigeon } from './PaperPigeon';
-import { LandingScreen } from './page03/LandingScreen';
+import { FlockReady, PhoneOnboarding, ProfileOnboarding } from './Onboarding';
+import { onboardingRoute } from './onboardingModel';
+import { Button, Link, Loading, Notice, s } from './ui';
+import { PageFrame, usePageInsets } from './page03/atoms';
 
-type SetupMode = 'create' | 'join' | 'account';
-
-function failure(cause: unknown, fallback: string): string {
-  return cause instanceof ConvexError && typeof cause.data === 'string' ? cause.data : fallback;
+export function LetterApp(props: { deployment: string; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void }) {
+  return <QueryBoundary><AccountRouter {...props} /></QueryBoundary>;
 }
 
-export function LetterApp({ deployment, onCatch, onReturn }: { deployment: string; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void }) {
+function AccountRouter({ deployment, onCatch, onReturn }: { deployment: string; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void }) {
   const { isAuthenticated, isLoading } = useConvexAuth();
-  const { signOut } = useAuthActions();
+  const { signIn, signOut } = useAuthActions();
   const connection = useConvexConnectionState();
-  const [mode, setMode] = useState<SetupMode>('create');
-  const [diagnostic, setDiagnostic] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
-  const [error, setError] = useState('');
-  const [entering, setEntering] = useState(false);
+  const sendCode = useAction(api.phoneAuth.sendCode);
+  const status = useQuery(api.onboarding.status, isAuthenticated ? {} : 'skip');
+  const complete = useMutation(api.onboarding.complete);
+  const [username, setUsername] = useState('');
+  const availability = useQuery(api.onboarding.usernameAvailable, isAuthenticated && username ? { username } : 'skip');
+  const [ready, setReady] = useState<{ username: string; pigeons: { name: string }[] } | null>(null);
+  const [finishing, setFinishing] = useState(false);
+  const [compose, setCompose] = useState(false);
   const [settings, setSettings] = useState(false);
-  const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
-  const connected = connection.isWebSocketConnected;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const insets = usePageInsets();
+  const route = onboardingRoute(isLoading, isAuthenticated, status?.status);
 
   async function leave() {
-    setSigningOut(true);
-    setError('');
-    try { await signOut(); }
+    if (busy) return;
+    setBusy(true); setError('');
+    try { await signOut(); setReady(null); setCompose(false); setSettings(false); setUsername(''); }
     catch { setError('Sign out did not finish. Please try again.'); }
-    finally { setSigningOut(false); }
+    finally { setBusy(false); }
   }
 
-  if (!isAuthenticated && !entering) return <LandingScreen onStart={() => setEntering(true)} />;
-  if (isAuthenticated && !diagnostic && !settings) return <View style={{ flex: 1, backgroundColor: 'white' }}><QueryBoundary><SignedIn deployment={deployment} mode={mode} setMode={setMode} connected={connected} onCatch={onCatch} onReturn={onReturn} onNavigate={() => {}} onMenu={() => setSettings(true)} /></QueryBoundary></View>;
-
-  return <SafeAreaView style={s.safe}><KeyboardAvoidingView style={s.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><ScrollView ref={scroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={s.scroll}><View style={s.page}>
-    <View style={s.header}><View style={s.grow}><Wordmark /></View><View style={s.row}><View style={[s.dot, !connected && s.disconnected]} /><Text accessibilityLiveRegion="polite" style={s.small}>{connected ? 'Connected' : 'Offline'}</Text></View></View>
-    <Link label="Back to my flights" onPress={() => { setEntering(false); setSettings(false); setDiagnostic(false); }} />
-    {!connected && <Notice>The post office is reconnecting. Saved drafts stay on this device; delivery waits for the server.</Notice>}
-    {diagnostic && <QueryBoundary><Diagnostic connected={connected} /></QueryBoundary>}
-    {!diagnostic && !settings && <View style={{ flexGrow: 1 }}>{isLoading ? <Loading label="Restoring your sign-in…" /> : <QueryBoundary><Welcome mode={mode} setMode={setMode} connected={connected} /></QueryBoundary>}</View>}
-    {settings && !diagnostic && <Text style={s.subtitle}>Your account</Text>}
-    {error ? <Notice error>{error}</Notice> : null}
-    <View style={s.divider} />
-    <View style={s.between}><Link label={diagnostic ? '← Back to letters' : 'Connection diagnostic'} onPress={() => setDiagnostic(!diagnostic)} />{isAuthenticated && <Link label={signingOut ? 'Signing out…' : 'Sign out'} disabled={signingOut || !connected} onPress={() => void leave()} />}</View>
-    {isAuthenticated && <Text style={s.small}>Anonymous demo access belongs to this session. Signing out loses access to that demo identity; it does not switch you to your partner.</Text>}
-  </View></ScrollView></KeyboardAvoidingView></SafeAreaView>;
+  if (route === 'loading' || (finishing && route === 'home')) return <View style={s.safe}><Loading label="Restoring your nest…" /></View>;
+  if (route === 'phone') return <PhoneOnboarding sendCode={phone => sendCode({ phone })} verifyCode={(phone, code) => signIn('phone', { phone, code })} />;
+  if (route === 'profile') return <><ProfileOnboarding availability={availability} checkUsername={setUsername} onBack={() => void leave()} complete={async values => {
+    setFinishing(true);
+    try { const result = await complete(values); setReady({ username: result.username!, pigeons: result.pigeons }); }
+    finally { setFinishing(false); }
+  }} />{error ? <Notice error>{error}</Notice> : null}</>;
+  if (ready) return <FlockReady {...ready} onCompose={() => { setCompose(true); setReady(null); }} onHome={() => { setCompose(false); setReady(null); }} />;
+  if (settings) return <PageFrame scroll style={{ paddingTop: insets.top, paddingBottom: insets.bottom, paddingHorizontal: 24, gap: 20 }}><Link label="Back to my flights" onPress={() => setSettings(false)} /><Text style={s.title}>Your account</Text><Text style={s.body}>@{(status?.status === 'complete' ? status.username : '')}</Text><Text style={s.small}>Your sign-in is saved on this device. Sign in again with the same verified number to return to your flock.</Text><Button label={busy ? 'Signing out…' : 'Sign out'} disabled={busy} onPress={() => void leave()} />{error ? <Notice error>{error}</Notice> : null}</PageFrame>;
+  return <Home deployment={deployment} connected={connection.isWebSocketConnected} initialCompose={compose} onCatch={onCatch} onReturn={onReturn} onMenu={() => setSettings(true)} />;
 }
 
-function Welcome({ mode, setMode, connected }: { mode: SetupMode; setMode: (mode: SetupMode) => void; connected: boolean }) {
-  const { signIn } = useAuthActions();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const request = useRef(false);
-
-  async function enter() {
-    if (request.current) return;
-    request.current = true;
-    setBusy(true);
-    setError('');
-    try {
-      if (mode === 'account') await signIn('password', { email: email.trim(), password, flow: 'signIn' });
-      else await signIn('anonymous');
-    } catch {
-      setError(mode === 'account' ? 'Could not sign in. Check your email and password, then try again.' : 'Could not start an anonymous session. Check your connection and try again.');
-    } finally { request.current = false; setBusy(false); }
-  }
-
-  return <View style={s.stack}>
-    <View style={s.hero}><View style={s.illustration}><PaperPigeon size={140} /></View><Text style={s.eyebrow}>LITTLE LETTERS, REAL DISTANCE</Text><Text style={s.title}>Some things are{ '\n' }worth the wait.</Text><Text style={[s.body, s.muted]}>Send a little piece of your day. Your pigeon takes the scenic route from your city to theirs.</Text></View>
-    <View style={s.card}><ModeTabs mode={mode} setMode={(next) => { setMode(next); setError(''); }} disabled={busy} />
-      {mode === 'account' ? <><Text style={s.subtitle}>Welcome back.</Text><Field label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} autoComplete="email" editable={!busy} /><Field label="Password" value={password} onChangeText={setPassword} secureTextEntry autoComplete="current-password" editable={!busy} /><Text style={s.small}>Use an existing Pigeon account. Regular accounts send at normal distance-based speed.</Text></> : <><Text style={s.subtitle}>{mode === 'create' ? 'A pair of pen pals.' : 'An invitation for you.'}</Text><Text style={s.body}>{mode === 'create' ? 'Start an isolated demo, then privately share a one-use invitation with someone on a second device.' : 'Have your partner’s private invitation ready. Joining connects only the two of you.'}</Text><Notice>Demo speed: 30–90 seconds. Normal travel estimates are always shown. No seeded letters or automatic replies.</Notice></>}
-      {error ? <Notice error>{error}</Notice> : null}
-      <Button label={busy ? 'Connecting…' : mode === 'account' ? 'Sign in' : mode === 'create' ? 'Create a demo pair →' : 'Join a demo pair →'} disabled={!connected || busy || (mode === 'account' && (!email.trim() || !password))} onPress={() => void enter()} />
-      {mode !== 'account' && <Text style={s.small}>Your anonymous sign-in is saved on this device. Each partner needs a separate browser profile or device.</Text>}
-    </View>
-  </View>;
-}
-
-function ModeTabs({ mode, setMode, disabled }: { mode: SetupMode; setMode: (mode: SetupMode) => void; disabled: boolean }) {
-  return <View accessibilityRole="tablist" style={s.tabs}>{([['create', 'Create pair'], ['join', 'Join pair'], ['account', 'Sign in']] as const).map(([value, label]) => <Pressable key={value} accessibilityRole="tab" accessibilityLabel={label} aria-selected={mode === value} accessibilityState={{ selected: mode === value, disabled }} disabled={disabled} style={[s.tab, mode === value && s.tabActive]} onPress={() => setMode(value)}><Text style={[s.tabText, mode === value && s.tabActiveText]}>{label}</Text></Pressable>)}</View>;
-}
-
-function SignedIn({ deployment, mode, setMode, connected, onCatch, onReturn, onNavigate, onMenu }: { deployment: string; mode: SetupMode; setMode: (mode: SetupMode) => void; connected: boolean; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void; onNavigate: () => void; onMenu?: () => void }) {
+function Home(props: { deployment: string; connected: boolean; initialCompose: boolean; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void; onMenu: () => void }) {
   const profile = useQuery(api.profiles.me, {});
   if (profile === undefined) return <Loading label="Finding your nest…" />;
-  if (profile === null) return <SafeAreaView style={s.safe}><ScrollView contentContainerStyle={s.scroll}><View style={s.page}><Link label="Back to account" onPress={() => onMenu?.()} /><ProfileSetup mode={mode} setMode={setMode} connected={connected} /></View></ScrollView></SafeAreaView>;
-  return <Mailbox key={profile.id} profile={profile} deployment={deployment} connected={connected} onCatch={onCatch} onReturn={onReturn} onNavigate={onNavigate} onMenu={onMenu} />;
-}
-
-function ProfileSetup({ mode, setMode, connected }: { mode: SetupMode; setMode: (mode: SetupMode) => void; connected: boolean }) {
-  const create = useMutation(api.starterPair.create);
-  const join = useMutation(api.starterPair.join);
-  const save = useMutation(api.profiles.save);
-  const [handle, setHandle] = useState('');
-  const [cityId, setCityId] = useState<CityId>('san-francisco');
-  const [token, setToken] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const pending = useRef(false);
-  const validHandle = /^[a-z0-9_]{3,24}$/.test(handle.trim().replace(/^@/, '').toLowerCase());
-
-  async function submit() {
-    if (pending.current) return;
-    pending.current = true;
-    setBusy(true);
-    setError('');
-    try {
-      if (mode === 'join') await join({ handle, cityId, token: token.trim() });
-      else if (mode === 'create') await create({ handle, cityId });
-      else await save({ handle, cityId });
-      setToken('');
-    } catch (cause) { setError(failure(cause, 'Setup could not be confirmed. Your inputs are kept; retry the same request.')); }
-    finally { pending.current = false; setBusy(false); }
-  }
-
-  return <View style={s.stack}><Text style={s.eyebrow}>YOUR RETURN ADDRESS</Text><Text style={s.title}>{mode === 'join' ? 'Meet your pen pal.' : 'Make a little nest.'}</Text><Text style={s.body}>Choose a handle and home city. City distance sets the pace of every letter.</Text><View style={s.card}>
-    <ModeTabs mode={mode} setMode={setMode} disabled={busy} />
-    <Field label="Your handle" placeholder="e.g. little_pigeon" value={handle} onChangeText={setHandle} autoCapitalize="none" autoCorrect={false} editable={!busy} maxLength={25} />
-    <Text style={s.small}>3–24 letters, numbers, or underscores. No need to use your real name.</Text>
-    <CityPicker value={cityId} onChange={setCityId} disabled={busy} />
-    {mode === 'join' && <><Field label="Private invitation" placeholder="Paste your partner’s invitation" value={token} onChangeText={setToken} secureTextEntry autoCapitalize="none" autoCorrect={false} editable={!busy} /><Text style={s.small}>Joining accepts a demo friendship with the person who invited you. Invitations expire and can be used by one partner only.</Text></>}
-    {mode === 'account' && <Notice>This completes a regular account profile only. An anonymous session must create or join a demo pair instead.</Notice>}
-    {error ? <Notice error>{error}</Notice> : null}
-    <Button label={busy ? 'Saving your nest…' : mode === 'join' ? 'Accept invitation & join' : mode === 'create' ? 'Create my pair' : 'Save regular profile'} disabled={!connected || busy || !validHandle || (mode === 'join' && !token.trim())} onPress={() => void submit()} />
-  </View></View>;
-}
-
-function Diagnostic({ connected }: { connected: boolean }) {
-  const value = useQuery(api.starterDemo.read, {});
-  const increment = useMutation(api.starterDemo.increment);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const inFlight = useRef(false);
-
-  async function change() {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    setBusy(true);
-    setError('');
-    try { await increment({}); }
-    catch { setError('The counter update was not confirmed. Check the displayed value before trying again.'); }
-    finally { inFlight.current = false; setBusy(false); }
-  }
-
-  return <View style={s.card}><Text style={s.eyebrow}>CONNECTION DIAGNOSTIC</Text><Text style={s.subtitle}>One shared counter.</Text><Text style={s.small}>Open this diagnostic in a second session to watch the same public test value update.</Text>{value === undefined ? <Loading /> : <Text accessibilityLiveRegion="polite" style={s.counter}>{value}</Text>}<Button label={busy ? 'Updating…' : 'Increment +1'} disabled={!connected || busy || value === undefined} onPress={() => void change()} />{error ? <Notice error>{error}</Notice> : null}<Text style={s.small}>This counter is public. It is separate from private letters and pairing.</Text></View>;
+  if (!profile) return <Notice error>Your profile could not be loaded. Please reopen the app to retry.</Notice>;
+  return <Mailbox key={profile.id} profile={profile} {...props} onNavigate={() => {}} />;
 }
 
 class QueryBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
   render() {
-    if (this.state.failed) return <View style={s.stack}><Notice error>The post office could not load this view. No delivery or send has been confirmed.</Notice><Button label="Retry loading" secondary onPress={() => this.setState({ failed: false })} /></View>;
+    if (this.state.failed) return <View style={[s.safe, { padding: 24, justifyContent: 'center', gap: 20 }]}><Notice error>The post office could not load this view. Check your connection and try again.</Notice><Button label="Retry loading" secondary onPress={() => this.setState({ failed: false })} /></View>;
     return this.props.children;
   }
 }

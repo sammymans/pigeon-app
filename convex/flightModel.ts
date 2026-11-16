@@ -63,6 +63,7 @@ export async function launchFor(ctx: MutationCtx, sender: Doc<'profiles'>, input
   let count = 0;
   for (const flight of active) if ((await settleFlight(ctx, flight, now)).state === 'in_flight') count++;
   if (count >= 3) throw new ConvexError('Three pigeons are already flying. Wait for one to arrive.');
+  if (!sender.cityId || !recipient.cityId) throw new ConvexError('Both people must choose a city before sending a letter.');
   const origin = cityById(sender.cityId);
   const destination = cityById(recipient.cityId);
   const distance = distanceKm(origin, destination);
@@ -70,7 +71,7 @@ export async function launchFor(ctx: MutationCtx, sender: Doc<'profiles'>, input
   const id = await ctx.db.insert('flights', {
     senderId: sender._id, recipientId, origin, destination, visibility: input.visibility, defense: input.defense,
     distanceKm: distance, departedAt: now, arrivesAt, state: 'in_flight', demo: input.demo,
-    namespace: sender.namespace, requestKey: input.requestKey, openAcknowledged: input.openAcknowledged, courier: ['Pip', 'Coo', 'Mochi', 'Bean', 'Postie'][Math.floor(Math.random() * 5)],
+    namespace: sender.namespace, requestKey: input.requestKey, openAcknowledged: input.openAcknowledged, courier: sender.onboardingCompletedAt !== undefined ? 'Mochi' : ['Pip', 'Coo', 'Mochi', 'Bean', 'Postie'][Math.floor(Math.random() * 5)],
     ...(input.visibility === 'open' ? { shareToken: opaqueToken() } : {}),
     attemptCount: 0, catchOpen: input.visibility === 'open', updatedAt: now, events: [{ at: now, label: 'Launched' }],
   });

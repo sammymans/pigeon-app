@@ -15,12 +15,12 @@ export async function requireProfile(ctx: QueryCtx) {
 }
 
 export function profileProjection(profile: Doc<'profiles'>) {
-  return { id: profile._id, handle: profile.handle, cityId: profile.cityId, equipped: profile.equipped, demo: profile.demo };
+  return { id: profile._id, handle: profile.handle, displayName: profile.displayName, cityId: profile.cityId, equipped: profile.equipped, demo: profile.demo };
 }
 
 export function normalizeHandle(value: string) {
   const handle = value.trim().replace(/^@/, '').toLowerCase();
-  if (!/^[a-z0-9_]{3,24}$/.test(handle)) throw new ConvexError('Use 3–24 lowercase letters, numbers, or underscores.');
+  if (!/^[a-z0-9_][a-z0-9_.]{2,23}$/.test(handle)) throw new ConvexError('Use 3–24 lowercase letters, numbers, underscores, or dots; do not start with a dot.');
   return handle;
 }
 
