@@ -6,5 +6,5 @@ export function visibleFlights(flights: FlightSummary[], scope: 'mine' | 'world'
 
 export function matchingFriends(friends: Profile[], search: string) {
   const term = search.trim().replace(/^@/, '').toLocaleLowerCase();
-  return friends.filter((friend) => `${friend.handle} ${cityById(friend.cityId).name}`.toLocaleLowerCase().includes(term));
+  return friends.filter((friend) => `${friend.handle} ${friend.cityId ? cityById(friend.cityId).name : ''}`.toLocaleLowerCase().includes(term));
 }

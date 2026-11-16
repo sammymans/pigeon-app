@@ -17,6 +17,8 @@ type Props = {
   onSelect: (id: string | null) => void;
   onInbox?: () => void;
   onMenu?: () => void;
+  onFlock?: () => void;
+  children?: ReactNode;
   onOpenLetter?: (id: string) => void;
   onSend: () => void;
   action?: string;
@@ -29,7 +31,7 @@ type Props = {
   notice?: ReactNode;
 };
 
-export function MapScreen({ flights, selected, serverNow, scope, onScope, onSelect, onInbox, onMenu, onOpenLetter, onSend, action = 'Send a pigeon', sendDisabled, loading = false, connected = true, clockError = false, title, subtitle, notice }: Props) {
+export function MapScreen({ flights, selected, serverNow, scope, onScope, onSelect, onInbox, onMenu, onFlock, children, onOpenLetter, onSend, action = 'Send a pigeon', sendDisabled, loading = false, connected = true, clockError = false, title, subtitle, notice }: Props) {
   const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState(Platform.OS === 'web');
   const [height, setHeight] = useState(844);
@@ -72,23 +74,24 @@ export function MapScreen({ flights, selected, serverNow, scope, onScope, onSele
         <View pointerEvents="none" style={styles.caption}><Text style={styles.captionText}>{stale ? 'Offline · routes only' : serverNow === null && flights.length ? 'Syncing clock · routes only' : 'City routes · not GPS'}</Text></View>
         <IconButton name="nearby" label={selectedFlight ? 'Fit selected flight' : flights.length ? 'Fit all flights' : 'Reset world view'} round onPress={() => setFitRequest(value => value + 1)} />
       </View>}
-      <View onLayout={event => setSheetHeight(event.nativeEvent.layout.height)} style={[styles.sheet, { paddingBottom: Math.max(12, insets.bottom), maxHeight: sheetLimit }, expanded && { height: Math.min(sheetLimit, Math.max(320, height * 0.51)) }]}>
+      {children ? <ScrollView onLayout={event => setSheetHeight(event.nativeEvent.layout.height)} style={[styles.sheet, { maxHeight: sheetLimit }]}>{children}</ScrollView> : <View onLayout={event => setSheetHeight(event.nativeEvent.layout.height)} style={[styles.sheet, { paddingBottom: Math.max(12, insets.bottom), maxHeight: sheetLimit }, expanded && { height: Math.min(sheetLimit, Math.max(320, height * 0.51)) }]}>
         <View {...drag.panHandlers}><Pressable accessibilityRole="button" accessibilityLabel={expanded ? 'Collapse flight list' : 'Expand flight list'} accessibilityState={{ expanded }} onPress={() => setExpanded(value => !value)} style={styles.handleTarget}><View style={styles.handle} /></Pressable></View>
         <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={styles.sheetContent} nestedScrollEnabled keyboardShouldPersistTaps="handled">
           <View style={styles.summaryRow}><View style={styles.summaryText}><Text accessibilityRole="header" style={styles.heading}>{expanded ? heading : selectedFlight ? `${selectedFlight.courier} is on the wing` : heading}</Text>{!selectedFlight || expanded ? <Text style={styles.subtitle}>{summary}</Text> : null}</View><IconButton name={selectedFlight && !expanded ? 'close' : expanded ? 'close' : 'more'} label={selectedFlight && !expanded ? 'Clear selected flight' : expanded ? 'Collapse flight list' : 'Browse flights'} onPress={() => { if (selectedFlight && !expanded) onSelect(null); else setExpanded(value => !value); }} /></View>
           {stale && <Text accessibilityRole="alert" style={styles.status}>Reconnecting. Routes may be out of date; live positions and countdowns are paused.</Text>}
           {notice}
+          {onFlock && !selectedFlight && !expanded && <Pressable accessibilityRole="button" accessibilityLabel="Open your flock" onPress={onFlock} style={styles.textButton}><Text style={styles.link}>Your flock</Text><Icon name="arrow" color={palette.blue} size={18} /></Pressable>}
           {selectedFlight && !expanded ? <View style={styles.selection}>
             <View style={styles.routeRow}><View style={styles.bird}><PaperPigeon size={44} /></View><View style={{ flex: 1 }}><Text style={styles.route}>{selectedFlight.origin.name} → {selectedFlight.destination.name}</Text><Text style={styles.subtitle}>{selectedFlight.visibility === 'sealed' ? 'Sealed · private flight' : 'Open Skies'}{selectedFlight.demo ? ' · Demo speed' : ''}</Text></View></View>
             <Text style={styles.status}>{stale || serverNow === null ? 'Waiting for the server clock' : flightStatus(selectedFlight, serverNow)}</Text>
-            {scope === 'mine' && onOpenLetter && <Pressable accessibilityRole="button" onPress={() => onOpenLetter(selectedFlight.id)} style={styles.textButton}><Text style={styles.link}>Open letter details</Text><Icon name="arrow" color={palette.blue} size={18} /></Pressable>}
+            {scope === 'mine' && onOpenLetter && <Pressable accessibilityRole="button" accessibilityLabel="Open letter details" onPress={() => onOpenLetter(selectedFlight.id)} style={styles.textButton}><Text style={styles.link}>Open letter details</Text><Icon name="arrow" color={palette.blue} size={18} /></Pressable>}
           </View> : expanded ? <>
             {flights.length === 0 && !loading && <Text style={styles.empty}>{scope === 'mine' ? 'No pigeons are flying right now. Send a letter to an accepted friend, or check your postbox for past journeys.' : 'No Open Skies flights are available right now. Private letters never appear here.'}</Text>}
             {flights.map(flight => <Pressable key={flight.id} accessibilityRole="button" accessibilityLabel={`Select ${flight.courier}, ${flight.origin.name} to ${flight.destination.name}`} accessibilityState={{ selected: flight.id === selected }} onPress={() => select(flight.id)} style={[styles.flightRow, flight.id === selected && styles.selectedRow]}><PaperPigeon size={42} /><View style={{ flex: 1 }}><Text style={styles.route}>{flight.origin.name} → {flight.destination.name}</Text><Text style={styles.subtitle}>{flight.courier} · {flight.visibility === 'sealed' ? 'Sealed' : 'Open Skies'}{flight.demo ? ' · Demo speed' : ''}</Text></View><Icon name="arrow" size={17} color={palette.muted} /></Pressable>)}
           </> : null}
         </ScrollView>
         <View style={styles.send}><PrimaryButton label={action} arrow onPress={onSend} disabled={sendDisabled} /></View>
-      </View>
+      </View>}
     </View>
   </PageFrame>;
 }
