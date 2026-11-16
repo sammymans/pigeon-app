@@ -13,6 +13,15 @@ async function setup() {
 }
 
 describe('phone onboarding', () => {
+  it('does not let the legacy save endpoint skip the verified-phone flock grant', async () => {
+    const { t, session } = await setup();
+    await session.mutation(api.profiles.save, { handle: 'phone_user', cityId: 'london' });
+    expect((await session.query(api.onboarding.status, {})).pigeons).toHaveLength(5);
+    await session.mutation(api.profiles.save, { handle: 'phone_user', cityId: 'paris' });
+    expect(await t.run(ctx => ctx.db.query('pigeons').collect())).toHaveLength(5);
+    const unverified = await t.run(ctx => ctx.db.insert('users', { phone: '+14155550999' }));
+    await expect(t.withIdentity({ subject: `${unverified}|session` }).mutation(api.profiles.save, { handle: 'unverified', cityId: 'london' })).rejects.toThrow('Verify');
+  });
   it('resumes incomplete profiles and atomically provisions one ordered private flock', async () => {
     const { t, id, session } = await setup();
     expect((await t.query(api.onboarding.status, {})).status).toBe('signedOut');
@@ -49,9 +58,10 @@ describe('phone onboarding', () => {
   });
 
   it('bypasses legacy complete profiles without changing their location or handle', async () => {
-    const { session } = await setup();
-    await session.mutation(api.profiles.save, { handle: 'legacy', cityId: 'london' });
+    const { t, id, session } = await setup();
+    await t.run(ctx => ctx.db.insert('profiles', { userId: id, handle: 'legacy', cityId: 'london', equipped: 'classic', demo: false, namespace: 'live' }));
     expect((await session.query(api.onboarding.status, {})).status).toBe('complete');
+    expect((await session.query(api.onboarding.status, {})).pigeons).toHaveLength(0);
     expect((await session.mutation(api.onboarding.complete, { username: 'newname' })).username).toBe('legacy');
     expect((await session.query(api.profiles.me, {}))?.cityId).toBe('london');
   });
