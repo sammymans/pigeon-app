@@ -12,6 +12,7 @@ import { Button, Link, Loading, Notice, s } from './ui';
 import { PageFrame, usePageInsets } from './page03/atoms';
 import { CatchGame } from './game/CatchGame';
 import { useCatchTransport } from './game/useCatchTransport';
+import { DemoEntry } from './DemoEntry';
 
 export function LetterApp(props: { deployment: string; onCatch?: (flightId: string) => void; onReturn?: (flightId: string) => void }) {
   return <QueryBoundary><AuthGate {...props} /></QueryBoundary>;
@@ -21,13 +22,14 @@ type RoutingProps = { deployment: string; onCatch?: (flightId: string) => void; 
 type AccountStatus = Exclude<FunctionReturnType<typeof api.onboarding.status>, { status: 'signedOut' }>;
 
 function AuthGate(props: RoutingProps) {
+  const [demoEntry, setDemoEntry] = useState(false);
   const { isAuthenticated, isLoading } = useConvexAuth();
   const { signIn } = useAuthActions();
   const sendCode = useAction(api.phoneAuth.sendCode);
   const status = useQuery(api.onboarding.status, isAuthenticated ? {} : 'skip');
   const route = onboardingRoute(isLoading, isAuthenticated, status?.status);
   if (route === 'loading') return <View style={s.safe}><Loading label="Restoring your nest…" /></View>;
-  if (route === 'phone' || !status || status.status === 'signedOut') return <PhoneOnboarding sendCode={phone => sendCode({ phone })} verifyCode={(phone, code) => signIn('phone', { phone, code })} />;
+  if (route === 'phone' || !status || status.status === 'signedOut') return demoEntry && process.env.EXPO_PUBLIC_DEMO_ENTRY === 'true' ? <DemoEntry onBack={() => setDemoEntry(false)} /> : <View style={{ flex: 1 }}><PhoneOnboarding sendCode={phone => sendCode({ phone })} verifyCode={(phone, code) => signIn('phone', { phone, code })} />{process.env.EXPO_PUBLIC_DEMO_ENTRY === 'true' && <Button label="Try demo — no phone verification" onPress={() => setDemoEntry(true)} />}</View>;
   return <AccountRouter key={status.accountId} status={status} {...props} />;
 }
 

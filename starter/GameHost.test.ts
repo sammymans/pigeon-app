@@ -13,6 +13,7 @@ const harness = vi.hoisted(() => ({
 }));
 vi.mock('@convex-dev/auth/react', () => ({ useAuthActions: () => ({ signIn: vi.fn(), signOut: vi.fn() }) }));
 vi.mock('convex/react', () => ({
+  useConvex: () => ({}),
   useConvexAuth: () => ({ isAuthenticated: harness.authenticated, isLoading: false }),
   useConvexConnectionState: () => ({ isWebSocketConnected: true }),
   useAction: () => vi.fn(), useMutation: () => harness.ensureFlock,
@@ -35,6 +36,8 @@ vi.mock('./Onboarding', () => ({ FlockReady: 'FlockReady', PhoneOnboarding: 'Pho
 vi.mock('./useServerClock', () => ({ useServerClock: () => ({ serverNow: 1000, syncError: false }) }));
 vi.mock('./PaperPigeon', () => ({ PaperPigeon: 'PaperPigeon' }));
 vi.mock('./Pigeon', () => ({ Pigeon: 'Pigeon' }));
+vi.mock('./shop/Shop', () => ({ Shop: 'Shop' }));
+vi.mock('./shop/convexGateway', () => ({ createConvexShopGateway: () => ({ scopeKey: 'fixture' }) }));
 vi.mock('./game/CatchGame', () => ({ CatchGame: 'CatchGame' }));
 vi.mock('./game/useCatchTransport', () => ({ useCatchTransport: () => ({}) }));
 vi.mock('./ui', () => ({ Button: 'Button', Envelope: 'Envelope', Field: 'Field', Link: 'Link', Loading: 'Loading', Notice: 'Notice', PostalCard: 'PostalCard', ScreenHeader: 'ScreenHeader', colors: {}, s: {} }));

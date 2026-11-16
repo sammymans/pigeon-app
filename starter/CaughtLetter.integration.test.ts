@@ -21,6 +21,7 @@ const harness = vi.hoisted(() => ({
 
 vi.mock('@convex-dev/auth/react', () => ({ useAuthActions: () => ({ signIn: harness.signIn, signOut: harness.signOut }) }));
 vi.mock('convex/react', () => ({
+  useConvex: () => ({}),
   useConvexAuth: () => ({ isAuthenticated: harness.authenticated, isLoading: harness.loading }),
   useConvexConnectionState: () => ({ isWebSocketConnected: true }),
   useAction: () => harness.sendCode,
@@ -43,8 +44,11 @@ vi.mock('react-native', () => ({ Pressable: 'Pressable', Text: 'Text', TextInput
 vi.mock('./Onboarding', () => ({ FlockReady: 'FlockReady', PhoneOnboarding: 'PhoneOnboarding', ProfileOnboarding: 'ProfileOnboarding' }));
 vi.mock('./useDraft', () => ({ useDraft: () => harness.draft }));
 vi.mock('./useServerClock', () => ({ useServerClock: () => ({ serverNow: 1000, syncError: false }) }));
+vi.mock('expo-crypto', () => ({ randomUUID: () => 'fixture-shop-visit' }));
 vi.mock('./PaperPigeon', () => ({ PaperPigeon: 'PaperPigeon' }));
 vi.mock('./Pigeon', () => ({ Pigeon: 'Pigeon' }));
+vi.mock('./shop/Shop', () => ({ Shop: 'Shop' }));
+vi.mock('./shop/convexGateway', () => ({ createConvexShopGateway: () => ({ scopeKey: 'fixture' }) }));
 vi.mock('./game/CatchGame', () => ({ CatchGame: 'CatchGame' }));
 vi.mock('./game/useCatchTransport', () => ({ useCatchTransport: () => ({}) }));
 vi.mock('./ui', () => ({

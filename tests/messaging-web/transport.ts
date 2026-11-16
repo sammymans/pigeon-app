@@ -35,6 +35,19 @@ export const control = {
 };
 Object.assign(window, { messagingFixture: control });
 
+const fixtureClient = {
+  query: async () => ({
+    revision: String(revision), source: 'test-preview', points: null, inventory: [], serverNow: Date.now(),
+    birds: state.birds.map((bird: Pigeon, index: number) => ({ id: bird.id, name: bird.name, appearance: index === 2 ? 'button' : 'mochi', status: bird.ready ? 'ready' : 'flying', ...(!bird.ready ? { returnLabel: 'Fixture flight' } : {}) })),
+    capabilities: { accessories: false, boosters: false, stones: false, checkout: false, reason: 'LOCAL FIXTURE: browsing and bird selection only. No payments, credits or live account.' },
+  }),
+  watchQuery: () => ({ onUpdate: subscribe }),
+  mutation: async () => { throw new Error('Fixture purchases are disabled.'); },
+  action: async () => { throw new Error('Fixture payments are disabled.'); },
+};
+
+export function useConvex() { return fixtureClient; }
+
 export function useQuery(reference: unknown, args: any) {
   useSyncExternalStore(subscribe, version);
   if (args === 'skip') return undefined;
